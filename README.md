@@ -1,1 +1,1 @@
-# ANPU
+# Neuron Kernel Language (NKL)
