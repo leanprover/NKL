@@ -2,8 +2,8 @@
 # Released under Apache 2.0 license as described in the file LICENSE.
 # Authors: Paul Govereau
 
-from lean_types import *
-from lean_rffi import *
+from nkl.lean_types import *
+from nkl.lean_rffi import *
 
 def to_json_dict(obj):
   if isinstance(obj, tuple) and hasattr(obj, '_fields'):
