@@ -17,6 +17,4 @@ def parse_json (json : String) : IO Unit := do
   | .ok jsn => do
     match Lean.fromJson? jsn with
     | .error str => throw $ .userError str
-    | .ok (_:Fun) => do
-      IO.println "parse successsful"
-      return ()
+    | .ok (_:Fun) => return ()

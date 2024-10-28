@@ -77,7 +77,7 @@ def struct(name, args):
 "
 
 run_meta
-  let h <- IO.FS.Handle.mk "python/lean_types.py" IO.FS.Mode.write
+  let h <- IO.FS.Handle.mk "interop/nkl/lean_types.py" IO.FS.Mode.write
   h.putStr header
   flip List.forM (genPython h)
     [ `NKL.Const
