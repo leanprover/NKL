@@ -81,10 +81,8 @@ run_meta
   h.putStr header
   flip List.forM (genPython h)
     [ `NKL.Const
-    , `NKL.BinOp
     , `NKL.Expr
     , `NKL.Index
     , `NKL.Stmt
-    , `NKL.Arg
     , `NKL.Fun
     ]
