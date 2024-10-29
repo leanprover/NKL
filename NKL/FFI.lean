@@ -5,6 +5,7 @@ Authors: Paul Govereau
 -/
 import Lean
 import NKL.NKI
+import NKL.PrettyPrint
 
 namespace NKL
 
@@ -17,4 +18,4 @@ def parse_json (json : String) : IO Unit := do
   | .ok jsn => do
     match Lean.fromJson? jsn with
     | .error str => throw $ .userError str
-    | .ok (_:Fun) => return ()
+    | .ok (f:Fun) => print_nki f
