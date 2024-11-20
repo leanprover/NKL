@@ -15,35 +15,27 @@ instance : ToString Const where
   | .int i => toString i
   | .float f => toString f
   | .string s => s
-
+  | .dots => "..."
 
 mutual
 private partial def exps_ s l := String.intercalate s (List.map expr l)
 private partial def exps := exps_ ","
-private partial def ndxs l := String.intercalate "," (List.map ndx l)
 
 private partial def expr : Expr -> String
   | .value c => toString c
   | .bvar s | .var s _ => s
-  | .subscript e ix => expr e ++ "[" ++ ndxs ix ++ "]"
+  | .subscript e ix => expr e ++ "[" ++ exps ix ++ "]"
+  | .slice l u s => exps_ ":" [l,u,s]
   | .binop op l r => op ++ "(" ++ expr l ++ "," ++ expr r ++ ")"
   | .cond e thn els => expr thn ++ " if " ++ expr e ++ " else " ++ expr els
   | .tuple es => "(" ++ exps es ++ ")"
   | .list es => "[" ++  exps es ++ "]"
   | .call f es => expr f ++ "(" ++ exps es ++ ")"
-  | .gridcall f ix es => expr f ++ "[" ++ ndxs ix ++ "](" ++ exps es ++ ")"
-
-private partial def ndx : Index -> String
-  | .coord e => expr e
-  | .slice l u s => exps_ ":" [l,u,s]
-  | .dots => "..."
+  | .gridcall f ix es => expr f ++ "[" ++ exps ix ++ "](" ++ exps es ++ ")"
 end
 
 instance : ToString Expr where
   toString := expr
-
-instance : ToString Index where
-  toString := ndx
 
 mutual
 private partial def stmts sp l :=

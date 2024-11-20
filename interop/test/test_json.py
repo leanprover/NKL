@@ -40,11 +40,11 @@ nil = Value(Nil())
 
 @pytest.mark.parametrize("term",
     [ [],
-      [Coord(var)],
-      [Coord(var), Coord(nil)],
+      [var],
+      [var, nil],
       [Slice(var, var, var)],
-      [Slice(nil, nil, nil), Coord(nil)],
-      [Dots()],
+      [Slice(nil, nil, nil), nil],
+      [Value(Dots())],
     ])
 def test_subscript(term):
   load(Fun("f", [], [Assign(Var("a", 0), Subscript(var, term))]))

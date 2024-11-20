@@ -29,6 +29,7 @@ def opr(e: ast.AST):
 
 def const(c):
   if c is None: return Nil()
+  elif c is Ellipsis: return Dots()
   elif isinstance(c, bool): return Bool(c)
   elif isinstance(c, int): return Int(c)
   elif isinstance(c, float): return Float(c)
@@ -93,16 +94,6 @@ class Loader:
       case _:
         assert 0, "expecting function definition"
 
-  # expressions appearing under a subscript
-  def index(self, e: ast.expr):
-    match e:
-      case ast.Ellipsis():
-        return Dots()
-      case ast.Slice(l,u,s):
-        return Slice(self.expr(l), self.expr(u), self.expr(s))
-      case _:
-        return Coord(self.expr(e))
-
   def expr(self, e: ast.expr):
     if e is None:
       return Value(Nil())
@@ -155,9 +146,12 @@ class Loader:
 
       # subscript
       case ast.Subscript(l, ast.Tuple(ix)):
-        return Subscript(self.expr(l), list(map(self.index, ix)))
+        return Subscript(self.expr(l), list(map(self.expr, ix)))
       case ast.Subscript(l, ix):
-        return Subscript(self.expr(l), [self.index(ix)])
+        return Subscript(self.expr(l), [self.expr(ix)])
+      # only appears under subscript
+      case ast.Slice(l,u,s):
+        return Slice(self.expr(l), self.expr(u), self.expr(s))
 
       # literals
       case ast.Tuple(es):
