@@ -20,28 +20,22 @@ inductive Const where
   | int (value: Int)
   | float (value: Float)
   | string (value: String)
+  | dots
   deriving Repr, BEq, Lean.ToJson, Lean.FromJson
 
-mutual
 inductive Expr where
   | value (c: Const)
   | bvar (name: String)
   | var (name value: String)
-  | subscript (tensor: Expr) (ix: List Index)
+  | subscript (tensor: Expr) (ix: List Expr)
+  | slice (l u step: Expr)
   | binop (op: String) (left right: Expr)
   | cond (e thn els: Expr)
   | tuple (xs: List Expr)
   | list (xs: List Expr)
   | call (f: Expr) (args: List Expr)
-  | gridcall (f: Expr) (ix: List Index) (args: List Expr)
+  | gridcall (f: Expr) (ix: List Expr) (args: List Expr)
   deriving Repr, BEq, Lean.ToJson, Lean.FromJson
-
-inductive Index where
-  | coord (i : Expr)
-  | slice (l u step: Expr)
-  | dots
-  deriving Repr, BEq, Lean.ToJson, Lean.FromJson
-end
 
 inductive Stmt where
   | ret (e: Expr)

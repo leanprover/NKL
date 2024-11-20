@@ -163,6 +163,7 @@ def encConst : Const -> ByteArray
   | .int i      => tag 0x03 [encInt i]
   | .float f    => tag 0x04 [encFloat f]
   | .string s   => tag 0x05 [encString s]
+  | .dots       => tag 0x06 []
 
 def decConst : DecodeM Const := do
   let val <- next
@@ -173,6 +174,7 @@ def decConst : DecodeM Const := do
   | 0x03 => return .int (<- decInt)
   | 0x04 => return .float (<- decFloat)
   | 0x05 => return .string (<- decString)
+  | 0x06 => return .dots
   | _ => throw s!"Unknown Const tag value {val}"
 
 private def chkConst (c: Const) : Bool :=
@@ -184,74 +186,55 @@ private def chkConst (c: Const) : Bool :=
 #guard chkConst (.int 1)
 #guard chkConst (.float 1.0)
 #guard chkConst (.string "str")
+#guard chkConst .dots
 
 ------------------------------------------------------------------------------
 -- Expressions
 
-mutual
 partial def encExpr : Expr -> ByteArray
   | .value c          => tag 0x10 [encConst c]
   | .bvar s           => tag 0x11 [encString s]
   | .var s _          => tag 0x12 [encString s]
-  | .subscript e ix   => tag 0x13 [encExpr e, encList encIndex ix]
-  | .binop op l r     => tag 0x14 [encString op, encExpr l, encExpr r]
-  | .cond c t e       => tag 0x15 [encExpr c, encExpr t, encExpr e]
-  | .tuple es         => tag 0x16 [encList encExpr es]
-  | .list es          => tag 0x17 [encList encExpr es]
-  | .call f ax        => tag 0x18 [encExpr f, encList encExpr ax]
-  | .gridcall f ix ax => tag 0x19 [encExpr f, encList encIndex ix, encList encExpr ax]
+  | .subscript e ix   => tag 0x13 [encExpr e, encList encExpr ix]
+  | .slice l u step   => tag 0x14 [encExpr l, encExpr u, encExpr step]
+  | .binop op l r     => tag 0x15 [encString op, encExpr l, encExpr r]
+  | .cond c t e       => tag 0x16 [encExpr c, encExpr t, encExpr e]
+  | .tuple es         => tag 0x17 [encList encExpr es]
+  | .list es          => tag 0x18 [encList encExpr es]
+  | .call f ax        => tag 0x19 [encExpr f, encList encExpr ax]
+  | .gridcall f ix ax => tag 0x1a [encExpr f, encList encExpr ix, encList encExpr ax]
 
-partial def encIndex : Index -> ByteArray
-  | .coord i        => tag 0x20 [encExpr i]
-  | .slice l u step => tag 0x21 [encExpr l, encExpr u, encExpr step]
-  | .dots           => tag 0x22 []
-end
-
-mutual
 partial def decExpr : DecodeM Expr := do
   match (<- next) with
   | 0x10 => return .value (<- decConst)
   | 0x11 => return .bvar (<- decString)
   | 0x12 => return .var (<- decString) ""
-  | 0x13 => return .subscript (<-decExpr) (<- decList decIndex)
-  | 0x14 => return .binop (<- decString) (<- decExpr) (<- decExpr)
-  | 0x15 => return .cond (<- decExpr) (<- decExpr) (<- decExpr)
-  | 0x16 => return .tuple (<- decList decExpr)
-  | 0x17 => return .list (<- decList decExpr)
-  | 0x18 => return .call (<- decExpr) (<- decList decExpr)
-  | 0x19 => return .gridcall (<- decExpr) (<- decList decIndex) (<- decList decExpr)
+  | 0x13 => return .subscript (<- decExpr) (<- decList decExpr)
+  | 0x14 => return .slice (<- decExpr) (<- decExpr) (<- decExpr)
+  | 0x15 => return .binop (<- decString) (<- decExpr) (<- decExpr)
+  | 0x16 => return .cond (<- decExpr) (<- decExpr) (<- decExpr)
+  | 0x17 => return .tuple (<- decList decExpr)
+  | 0x18 => return .list (<- decList decExpr)
+  | 0x19 => return .call (<- decExpr) (<- decList decExpr)
+  | 0x1a => return .gridcall (<- decExpr) (<- decList decExpr) (<- decList decExpr)
   | t => throw s!"Unknown tag in Expr {t}"
-
-partial def decIndex : DecodeM Index := do
-  match (<- next) with
-  | 0x20 => return .coord (<- decExpr)
-  | 0x21 => return .slice (<- decExpr) (<- decExpr) (<- decExpr)
-  | 0x22 => return .dots
-  | t => throw s!"Unknown tag in Index {t}"
-end
 
 private def chkExpr (e : Expr) : Bool :=
   (decode' decExpr $ encExpr e) == some e
-private def chkIndex (i : Index) : Bool :=
-  (decode' decIndex $ encIndex i) == some i
 
 private def nil := Expr.value .nil
-private def ndx := Index.coord nil
 
 #guard chkExpr nil
 #guard chkExpr (.bvar "var")
 #guard chkExpr (.var "var" "")
-#guard chkExpr (.subscript nil [ndx, ndx, ndx])
+#guard chkExpr (.subscript nil [nil, nil, nil])
+#guard chkExpr (.slice nil nil nil)
 #guard chkExpr (.binop "op" nil nil)
 #guard chkExpr (.cond nil nil nil)
 #guard chkExpr (.tuple [nil, nil, nil])
 #guard chkExpr (.list [nil, nil, nil])
 #guard chkExpr (.call nil [nil, nil, nil])
-#guard chkExpr (.gridcall nil [ndx, ndx, ndx] [nil, nil, nil])
-
-#guard chkIndex ndx
-#guard chkIndex (.slice nil nil nil)
-#guard chkIndex .dots
+#guard chkExpr (.gridcall nil [nil, nil, nil] [nil, nil, nil])
 
 ------------------------------------------------------------------------------
 -- Statements

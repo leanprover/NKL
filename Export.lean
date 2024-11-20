@@ -82,7 +82,6 @@ run_meta
   flip List.forM (genPython h)
     [ `NKL.Const
     , `NKL.Expr
-    , `NKL.Index
     , `NKL.Stmt
     , `NKL.Fun
     ]
