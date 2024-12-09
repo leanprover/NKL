@@ -6,16 +6,24 @@ Authors: Paul Govereau
 import Lean
 import NKL.NKI
 import NKL.PrettyPrint
+import NKL.Python
 
 namespace NKL
 
--- temporary for testing
+local instance : MonadLift (Except String) IO where
+  monadLift
+    | .ok x => return x
+    | .error s => throw $ .userError s
+
+@[export parse_json_old]
+def parse_json_old (json : String) : IO Unit := do
+  let jsn <- Lean.Json.parse json
+  let f:Fun <- Lean.fromJson? jsn
+  print_nki f
 
 @[export parse_json]
-def parse_json (json : String) : IO Unit := do
-  match Lean.Json.parse json with
-  | .error str => throw $ .userError str
-  | .ok jsn => do
-    match Lean.fromJson? jsn with
-    | .error str => throw $ .userError str
-    | .ok (f:Fun) => print_nki f
+def parse_json (s : String) : IO Unit := do
+  let kernel <- Python.Parsing.parse s
+  for (n,f) in kernel.funcs do
+    IO.println s!"found {n}"
+    IO.println s!"{repr f}"
