@@ -1,8 +1,5 @@
 import NKL
 
-def main (args : List String) : IO Unit :=
-  match args with
-  | .nil => IO.println s!"Hello, NKL!"
-  | .cons x _ => do
-    let s <- IO.FS.readFile x
-    NKL.parse_json s
+def main : List String -> IO Unit
+  | [ file ] => IO.FS.readFile file >>= NKL.parse_json
+  | _ => IO.println "invalid arguments"

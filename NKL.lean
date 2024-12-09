@@ -6,3 +6,4 @@ Authors: Paul Govereau
 import NKL.Encode
 import NKL.FFI
 import NKL.NKI
+import NKL.Python
