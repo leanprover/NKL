@@ -32,6 +32,8 @@ inductive Const where
   | ellipsis
   deriving Repr
 
+-- We don't need these, but we preserve them to make copying
+-- the Python AST over easier.
 inductive Ctx where
   | load | store | del
   deriving Repr
@@ -80,6 +82,25 @@ inductive Stmt' where
   deriving Repr
 end
 
+/-
+This structure is a mirror of the python arguments AST node.
+If we have the following Python function:
+
+  def f(a, b=1, /, c=2, *args, d, e=3, **kwargs): pass
+
+then the structure will be populated with:
+
+  posonlyargs = [a, b]
+  args = [c]
+  defaults = [1, 2]
+  vararg = "args"
+  kwonlyargs = [d, e]
+  kw_defaults = [None, 3]
+  kwarg = "kwargs"
+
+Note, defaults and kw_defaults are inconsistent in how they treat
+missing arguments, but this is just how it works in the python AST.
+-/
 structure Args where
   posonlyargs : List String
   args : List String
@@ -90,6 +111,12 @@ structure Args where
   kwarg : Option String
   deriving Repr
 
+/-
+In addition to the defaults above from the AST, we also collect
+the values from f.__defaults__ here in the Fun structure. These
+values are evaluated in a different context from the other names
+in the function, so we need to capture them on the Python side.
+-/
 structure Fun where
   source : String
   args : Args

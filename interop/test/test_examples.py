@@ -1,7 +1,7 @@
 import pytest
 
 from examples import *
-from nkl.loader import Loader
+from nkl.parser import Parser
 
 @pytest.mark.parametrize("module,name",
     [ (getting_started, "nki_tensor_add_kernel"),
@@ -31,6 +31,5 @@ from nkl.loader import Loader
     ])
 def test_parse(module, name):
   f = getattr(module, name)
-  F = Loader(f)
-  F.translate(F.ast)
-
+  F = Parser(f)
+  F.load()
