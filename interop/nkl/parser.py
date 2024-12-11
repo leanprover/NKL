@@ -10,6 +10,25 @@ import json
 from textwrap import dedent
 from itertools import chain
 from collections import deque
+from nkl.lean import py_to_lean
+
+# This is a custom JSON encoder for use with AST nodes.
+# The AST nodes are not handled by the default encoder.
+# For an AST node, we return a dictionary with the class
+# name mapped to the object dictionary. If the object
+# dictionary is empty we just return the class name.
+# e.g.
+# Binop(left=l,op=o,right=r), becomes:
+#    { BinOp : { left:l, op:o, right:r } }
+# Pass(), becomes
+#    'Pass'
+#
+# For anything else not handled by the default
+# encoder, we return "...", the Ellipsis.
+# Conveniently, Ellipsis is one of the things
+# that isn't handled, so it is properly mapped.
+
+# See also: NKL/Python.lean for the Lean side
 
 class Enc(json.JSONEncoder):
   def default(self, obj):
@@ -39,6 +58,10 @@ class Parser(ast.NodeVisitor):
         , 'globals': self.globals
         }
     return json.dumps(d, cls=Enc)
+
+  # TODO: just a placeholder for testing
+  def load(self):
+    py_to_lean(self.json())
 
   # resolve a reference: either populating the environment,
   # or adding new items to the work queue

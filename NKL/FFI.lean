@@ -24,6 +24,6 @@ def parse_json_old (json : String) : IO Unit := do
 @[export parse_json]
 def parse_json (s : String) : IO Unit := do
   let kernel <- Python.Parsing.parse s
-  for (n,f) in kernel.funcs do
-    IO.println s!"found {n}"
-    IO.println s!"{repr f}"
+  let names := kernel.funcs.map fun x => x.fst
+  let names := String.intercalate "," names
+  IO.println s!"Found functions: {names}"
