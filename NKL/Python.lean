@@ -15,10 +15,8 @@ see: https://docs.python.org/3/library/ast.html
 namespace NKL
 namespace Python
 
-deriving instance Repr for Lean.JsonNumber
-
 structure Pos where
-  lineno : Nat
+  lineno : Nat := 0
   end_lineno : Nat := 0
   col_offset : Nat := 0
   end_col_offset : Nat := 0
@@ -26,14 +24,15 @@ structure Pos where
 
 inductive Const where
   | none
-  | bool (value: Bool)
-  | num (value: Lean.JsonNumber)
-  | string (value: String)
+  | bool (value : Bool)
+  | int (value : Int)
+  | float (value : Float)
+  | string (value : String)
   | ellipsis
   deriving Repr
 
--- We don't need these, but we preserve them to make copying
--- the Python AST over easier.
+-- This context comes from the Python AST.
+-- The store hint is used by the tracing implementation for simplicity.
 inductive Ctx where
   | load | store | del
   deriving Repr
@@ -44,8 +43,9 @@ inductive Expr where
   deriving Repr
 
 inductive Expr' where
-  | const (value: Const)
-  | name (id: String) (ctx : Ctx)
+  | const (value : Const)
+  | tensor (shape : List Expr) (dtype : String)
+  | name (id : String) (ctx : Ctx)
   | attr (value : Expr) (id : String) (ctx : Ctx)
   | tuple (xs: List Expr) (ctx : Ctx)
   | list (xs: List Expr) (ctx : Ctx)
@@ -111,6 +111,13 @@ structure Args where
   kwarg : Option String
   deriving Repr
 
+def Args.names (ax : Args) : List String :=
+  let xs := ax.posonlyargs.append ax.args
+  let xs := match ax.vararg with | none => xs | some x => xs.append [x]
+  let xs := xs.append ax.kwonlyargs
+  let xs := match ax.kwarg  with | none => xs | some x => xs.append [x]
+  xs
+
 /-
 In addition to the defaults above from the AST, we also collect
 the values from f.__defaults__ here in the Fun structure. These
@@ -124,10 +131,22 @@ structure Fun where
   body: List Stmt
   deriving Repr
 
+/-
+A kernel is collection of:
+  - the name of the main kernel function: `entry`
+  - functions, including the primary function and any functions
+    called by the primary func that we are able to parse
+  - arguments to the primary function, the positional arguments
+    are in the field `args` and the keyword argument are in the
+    field `kwargs`
+  - global variables referenced by any of the functions
+-/
 structure Kernel where
   entry : String
   funcs : List (String × Fun)
-  globals : List (String × Option String)
+  args : List Expr'
+  kwargs : List (String × Expr')
+  globals : List (String × Expr')
 
 -------------------------------------------------------------------------------
 -- Converting Python AST from Json
@@ -191,29 +210,30 @@ private def withPos (p : String -> Json -> Parser b) (f : b -> Pos -> a) : Json 
     return (f exp pos)
   | _ => throw "expecting object"
 
+def genError (source err : String) (pos : Pos) : String :=
+  let lines := source.splitOn "\n"
+  let lineno := pos.lineno - 1
+  let colno := pos.col_offset
+  let line := if lines.length < lineno
+              then "<source not available>"
+              else lines[lineno]!
+  let indent := (Nat.repeat (List.cons ' ') colno List.nil).asString
+  s!"line {lineno}:\n{line}\n{indent}^-- {err}"
+
 private def withSrc (source : String) (p : Parser a) : Parser a :=
   try set { lineno := 0 : Pos } ; p
-  catch e => get >>= throw ∘ genError e
-where
-  genError (err : String) (pos : Pos) : String :=
-    let lines := source.splitOn "\n"
-    let lineno := pos.lineno - 1
-    let colno := pos.col_offset
-    let line := if lines.length < lineno
-                then "<source not available>"
-                else lines[lineno]!
-    let indent := (Nat.repeat (List.cons ' ') colno List.nil).asString
-    s!"line {lineno}:\n{line}\n{indent}^-- {err}"
+  catch e => get >>= throw ∘ genError source e
 
 -------------------------------------------------------------------------------
 -- Python AST Json objects
 
 def const : Json -> Parser Const
   | .null => return .none
-  | .bool b => return (.bool b)
-  | .num jn => return (.num jn)
+  | .bool b => return .bool b
+  | .num { mantissa := m, exponent := 0 } => return .int m
+  | .num jn => return .float jn.toFloat
   | .str "..." => return .ellipsis
-  | .str s => return (.string s)
+  | .str s => return .string s
   | _ => throw "expecting constant"
 
 def exprCtx : Json -> Parser Ctx
@@ -302,14 +322,40 @@ def function (j : Json) : Parser Fun := do
     let body <- field (list stmt) j "body"
     return Fun.mk source args defaults body
 
+-- Both global references and arguments are processed in the global
+-- environment. These terms do not have a position, and must be
+-- evaluable in the default environment.
+partial def global : Json -> Parser Expr'
+  | .null => return .const .none
+  | .obj (.node _ _ "fun"   (.str  s)    _) => return .name s .load
+  | .obj (.node _ _ "mod"   (.str  s)    _) => return .name s .load
+  | .obj (.node _ _ "bool"  (.bool b)    _) => return .const (.bool b)
+  | .obj (.node _ _ "float" (.num  n)    _) => return .const (.float n.toFloat)
+  | .obj (.node _ _ "int"   (.num ⟨m,0⟩) _) => return .const (.int m)
+  | .obj (.node _ _ "str"   (.str s)     _) => return .const (.string s)
+  | .obj (.node _ _ "tuple" (.arr arr)   _) => return .tuple (<- globals arr) .load
+  | .obj (.node _ _ "list"  (.arr arr)   _) => return .list  (<- globals arr) .load
+  | .obj (.node _ _ "tensor" kvs         _) => do
+      let dtype <- field global kvs "dtype"
+      let shape <- field global kvs "shape"
+      match dtype, shape with
+      | .const (.string s), .tuple l _ => return .tensor l s
+      | _, _ => throw "malformed tensor type"
+  | j => throw s!"malformed global environment '{j}'"
+where
+  globals (arr : Array Json) : Parser (List Expr) :=
+    arr.toList.mapM fun x => return .exprPos (<- global x) {}
+
 def kernel (j : Json) : Parser Kernel := do
   let name <- field str j "entry"
   let funcs <- field (dict function) j "funcs"
-  let globals <- field (dict (opt str)) j "globals"
-  return Kernel.mk name funcs globals
+  let args <- field (list global) j "args"
+  let kwargs <- field (dict global) j "kwargs"
+  let globals <- field (dict global) j "globals"
+  return Kernel.mk name funcs args kwargs globals
 
 def parse (s : String) : Except String Kernel := do
   let jsn <- Json.parse s
-  match kernel jsn { lineno := 0 } with
+  match kernel jsn {} with
   | .ok x _ => .ok x
   | .error s _ => .error s

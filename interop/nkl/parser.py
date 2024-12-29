@@ -6,6 +6,7 @@ import types
 import inspect
 import ast
 import json
+import numpy as np
 
 from textwrap import dedent
 from itertools import chain
@@ -42,19 +43,52 @@ class Enc(json.JSONEncoder):
     except Exception:
       return "..."
 
+# Referenced names, that are not functions are placed in the
+# global environment. Unlike functions, these values cannot
+# reflected on using the ast module (the inspect module can only
+# fetch sources for a limited number of types). This function
+# provides an encoding for the global environment for a common
+# set of types.
+
+class Unsupported(Exception): pass
+
+def encode_for_env(val):
+  match val:
+    case bool(b): return {'bool':b}
+    case int(i): return {'int':i}
+    case float(f): return {'float':f}
+    case str(s): return {'str':s}
+    case types.NoneType(): return None
+    case tuple(t): return {'tuple': list(map(encode_for_env, t))}
+    case list(l): return {'list': list(map(encode_for_env, l))}
+    case types.ModuleType(): return {'mod':val.__name__}
+    case np.ndarray():
+      return {
+          'tensor': {
+            'dtype': encode_for_env(str(val.dtype)),
+            'shape': encode_for_env(val.shape)
+            }
+          }
+    case _:
+      raise Unsupported(f"global value type: {val.__class__.__name__}")
+
 class Parser(ast.NodeVisitor):
   def __init__(self, f: types.FunctionType):
     super().__init__()
     self.workq = deque()
     self.funcs = {}
     self.globals = {}
+    self.args = []
+    self.kwargs = {}
     self.entry = f.__module__ + "." + f.__name__
-    self.reference(self.entry, f)
+    self.ref_global(self.entry, f)
     self.do_work()
 
   def json(self):
     d = { 'entry': self.entry
         , 'funcs': self.funcs
+        , 'args' : self.args
+        , 'kwargs' : self.kwargs
         , 'globals': self.globals
         }
     return json.dumps(d, cls=Enc)
@@ -63,31 +97,56 @@ class Parser(ast.NodeVisitor):
   def load(self):
     py_to_lean(self.json())
 
+  def apply_args(self, *args, **kwargs):
+    self.args = []
+    self.kwargs = {}
+    d = {}
+    for arg in args:
+      self.reference(d, '_', arg)
+      try: self.args.append(d.popitem()[1])
+      except Exception:
+        raise Exception("Unsupported argument type")
+    for k,v in kwargs.items():
+      self.ref_arg(k, v)
+
+  def __call__(self, *args, **kwargs):
+    self.apply_args(*args, **kwargs)
+    py_to_lean(self.json())
+
+  def ref_arg(self, refname, val):
+    return self.reference(self.kwargs, refname, val)
+
+  def ref_global(self, refname, val):
+    return self.reference(self.globals, refname, val)
+
   # resolve a reference: either populating the environment,
   # or adding new items to the work queue
-  def reference(self, refname, val):
+  def reference(self, env, refname, val):
     f = None
     if isinstance(val, types.FunctionType):
       f = val
-      val = f.__module__ + "." + f.__name__
-    elif isinstance(val, types.ModuleType):
-      val = val.__name__
+      fname = f.__module__ + "." + f.__name__
+      val = {'fun': fname}
+    else:
+      try: val = encode_for_env(val)
+      except Exception:
+        return
 
-    if refname in self.globals:
-      if val != self.globals[refname]:
+    if refname in env:
+      if val != env[refname]:
         assert 0, "global mismatch"
     else:
-      self.globals[refname] = val
+      env[refname] = val
 
     if f is None:
       return
     try:
       match ast.parse(dedent(inspect.getsource(f))):
         case ast.Module([ast.FunctionDef(_, args, body)]):
-          self.workq.append((val, f, args, body))
+          self.workq.append((fname, f, args, body))
         case _:
           assert 0, "expecting function definition"
-    except Exception as e:
+    except Exception:
       pass
 
   def do_work(self):
@@ -121,9 +180,11 @@ class Parser(ast.NodeVisitor):
       return
     try:
       y = self.lookup(node.id)
-      self.reference(node.id, y)
+      self.ref_global(node.id, y)
       return node.id, y
-    except Exception as e:
+    except Unsupported as e:
+      raise e
+    except Exception:
       return
 
   def visit_Attribute(self, node):
@@ -134,9 +195,11 @@ class Parser(ast.NodeVisitor):
       n, x = self.visit(node.value)
       n = n + "." + node.attr
       y = getattr(x, node.attr)
-      self.reference(n, y)
+      self.ref_global(n, y)
       return n, y
-    except Exception as e:
+    except Unsupported as e:
+      raise e
+    except Exception:
       return
 
   def fun_defaults(self, f: types.FunctionType):
@@ -152,6 +215,6 @@ class Parser(ast.NodeVisitor):
       if isinstance(x, types.FunctionType):
         # TODO: this could be incorrect if default
         # is using an alternate name for the function
-        self.reference(x.__name__, x)
+        self.ref_global(x.__name__, x)
       return False
     return { n:v for (n,v) in tbl.items() if is_ok(v) }
