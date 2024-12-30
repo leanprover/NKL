@@ -3,7 +3,6 @@
 # Authors: Paul Govereau
 
 import json
-from nkl.lean_types import *
 from nkl.lean_rffi import *
 
 def to_json_dict(obj):
@@ -20,8 +19,8 @@ def to_json_dict(obj):
     return d
   return obj
 
-def to_json(f: Fun):
+def to_json(f):
   return json.dumps(to_json_dict(f))
 
-def load(f: Fun):
+def load(f):
   py_to_lean(to_json(f))

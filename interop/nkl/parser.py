@@ -44,7 +44,7 @@ class Enc(json.JSONEncoder):
       return "..."
 
 # Referenced names, that are not functions are placed in the
-# global environment. Unlike functions, these values cannot
+# global environment. Unlike functions, these values cannot be
 # reflected on using the ast module (the inspect module can only
 # fetch sources for a limited number of types). This function
 # provides an encoding for the global environment for a common
