@@ -3,11 +3,4 @@
 # Authors: Paul Govereau
 
 from .lean import load, to_json
-from .loader import Loader
-
-def parse(f):
-  F = Loader(f)
-  return F.translate(F.ast)
-
-def parse_and_load(f):
-  load(parse(f))
+from .parser import Parser

@@ -6,8 +6,8 @@ set -x
 # Need to decide which of lake or setuptools is better to use,
 # and how we will distribute everything
 
-# make sure libNKL.a and lean_types.py are generated
-(cd ..; lake build NKL Export)
+# make sure libNKL.a is generated
+(cd ..; lake build NKL)
 
 LEAN_PREFIX=$(lean --print-prefix)
 LEAN_CFLAGS="-I${LEAN_PREFIX}/include"

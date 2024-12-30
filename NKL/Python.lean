@@ -31,8 +31,19 @@ inductive Const where
   | ellipsis
   deriving Repr
 
--- This context comes from the Python AST.
--- The store hint is used by the tracing implementation for simplicity.
+/-
+This context comes from the Python AST. The different hints
+indicated how an l-value term is being used. For example:
+
+  x = 1         # x is store context
+  return x + 5  # x is load context
+  del x         # x is del context
+
+The store hint is used by the tracing implementation for
+simplicity: we do not try to resolve names that are being
+"stored" to.
+-/
+
 inductive Ctx where
   | load | store | del
   deriving Repr
@@ -140,6 +151,15 @@ A kernel is collection of:
     are in the field `args` and the keyword argument are in the
     field `kwargs`
   - global variables referenced by any of the functions
+
+An example of a global is:
+
+  use_fancy_thing = true   # this will end up in globals
+  def kernel():
+    if use_fancy_thing:
+      ...
+    else:
+      ...
 -/
 structure Kernel where
   entry : String
