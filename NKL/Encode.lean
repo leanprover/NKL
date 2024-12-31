@@ -48,8 +48,8 @@ private def take (n : Nat) : DecodeM ByteArray :=
 ------------------------------------------------------------------------------
 -- Int64 is encoded as 8 bytes in little-endian order
 
-private def encUInt64 (u : UInt64) : ByteArray :=
-  let n := u.toBitVec.toFin.val
+private def encBV64 (bv : BitVec 64) : ByteArray :=
+  let n := bv.toFin.val
   .mk #[ UInt8.ofNat $ n >>> 0
        , UInt8.ofNat $ n >>> 8
        , UInt8.ofNat $ n >>> 16
@@ -60,38 +60,35 @@ private def encUInt64 (u : UInt64) : ByteArray :=
        , UInt8.ofNat $ n >>> 56
        ]
 
-private def decUInt64 : DecodeM UInt64 :=
+private def decBV64 : DecodeM (BitVec 64) :=
   let u8_64 : DecodeM UInt64 := next >>= fun x => return x.toUInt64
-  return (<- u8_64) <<< 0  |||
-         (<- u8_64) <<< 8  |||
-         (<- u8_64) <<< 16 |||
-         (<- u8_64) <<< 24 |||
-         (<- u8_64) <<< 32 |||
-         (<- u8_64) <<< 40 |||
-         (<- u8_64) <<< 48 |||
-         (<- u8_64) <<< 56
-
-private def encInt64 (i : Int64) : ByteArray := encUInt64 i.toUInt64
-private def decInt64 : DecodeM Int64 := return ⟨ (<- decUInt64) ⟩
+  return ((<- u8_64) <<< 0  |||
+          (<- u8_64) <<< 8  |||
+          (<- u8_64) <<< 16 |||
+          (<- u8_64) <<< 24 |||
+          (<- u8_64) <<< 32 |||
+          (<- u8_64) <<< 40 |||
+          (<- u8_64) <<< 48 |||
+          (<- u8_64) <<< 56).toBitVec
 
 -- Int64 isn't supported by ToJson/FromJson deriving
 -- For now, keep using Int in AST
 -- TODO: switch to Int64 in AST
-private def encInt (i : Int) : ByteArray := encInt64 (.ofInt i)
-private def decInt : DecodeM Int := return (<- decInt64).toInt
+private def encInt (i : Int) : ByteArray := encBV64 (.ofInt 64 i)
+private def decInt : DecodeM Int := return (<- decBV64).toInt
 
-private def encFloat (f : Float) : ByteArray := encUInt64 f.toBits
-private def decFloat : DecodeM Float := return Float.ofBits (<- decUInt64)
+private def encFloat (f : Float) : ByteArray := encBV64 f.toBits.toBitVec
+private def decFloat : DecodeM Float := return Float.ofBits ⟨ (<- decBV64) ⟩
 
 local instance : BEq ByteArray where
   beq a b := a.data == b.data
 
-#guard decode' decInt64 (.mk #[1,2,3,4,5,6,7]) == none
-#guard decode' decInt64 (.mk #[0,1,0,0,0,0,0,0]) == some 256
-#guard decode' decInt64 (encInt64 0) == some 0
-#guard decode' decInt64 (encInt64 1) == some 1
-#guard decode' decInt64 (encInt64 $ -1) == some (-1)
-#guard decode' decInt64 (encInt64 256) == some 256
+#guard decode' decBV64 (.mk #[1,2,3,4,5,6,7]) == none
+#guard decode' decBV64 (.mk #[0,1,0,0,0,0,0,0]) == some 256
+#guard decode' decBV64 (encBV64 0) == some 0
+#guard decode' decBV64 (encBV64 1) == some 1
+#guard decode' decBV64 (encBV64 $ -1) == some (-1)
+#guard decode' decBV64 (encBV64 256) == some 256
 
 #guard encInt 1    == .mk #[1, 0, 0, 0, 0, 0, 0, 0]
 #guard encInt 0    == .mk #[0, 0, 0, 0, 0, 0, 0, 0]
@@ -117,10 +114,10 @@ local instance : BEq ByteArray where
 
 private def encString (s : String) : ByteArray :=
   let ba := s.toUTF8
-  (encInt64 ba.size.toInt64).append ba
+  (encInt ba.size).append ba
 
 private def decString : DecodeM String := do
-  let len := (<- decInt64).toNat
+  let len := (<- decInt).toNat
   let ba <- take len
   match String.fromUTF8? ba with
   | none => throw "invalid UTF8 string"
@@ -137,13 +134,13 @@ private def encList (f : a -> ByteArray) (l : List a) : ByteArray :=
   let rec mapa : List a -> ByteArray
     | .nil => .mk #[]
     | .cons x l => (f x).append (mapa l)
-  (encInt64 l.length.toInt64).append (mapa l)
+  (encInt l.length).append (mapa l)
 
 private def decList (f : DecodeM a) : DecodeM (List a) := do
   let rec gena : Nat -> DecodeM (List a)
     | .zero => return []
     | .succ n => return (<- f) :: (<- gena n)
-  gena (<- decInt64).toNat
+  gena (<- decInt).toNat
 
 -- TODO: there are no types in serialized format, do we need that?
 #guard decode' (decList decInt) (encList encFloat []) = some []
