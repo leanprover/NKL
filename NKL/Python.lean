@@ -115,10 +115,10 @@ missing arguments, but this is just how it works in the python AST.
 structure Args where
   posonlyargs : List String
   args : List String
-  defaults: List Expr
+  defaults: List Expr'
   vararg : Option String
   kwonlyargs : List String
-  kw_defaults: List Expr
+  kw_defaults: List (String × Expr')
   kwarg : Option String
   deriving Repr
 
@@ -129,16 +129,14 @@ def Args.names (ax : Args) : List String :=
   let xs := match ax.kwarg  with | none => xs | some x => xs.append [x]
   xs
 
-/-
-In addition to the defaults above from the AST, we also collect
-the values from f.__defaults__ here in the Fun structure. These
-values are evaluated in a different context from the other names
-in the function, so we need to capture them on the Python side.
--/
+def Args.all_defaults (ax : Args) : List (String × Expr') :=
+  let args := ax.posonlyargs ++ ax.args
+  let dflt := args.reverse.zip ax.defaults.reverse
+  dflt ++ ax.kw_defaults
+
 structure Fun where
   source : String
   args : Args
-  defaults: List Const
   body: List Stmt
   deriving Repr
 
@@ -315,33 +313,6 @@ where
     | "If" => return (.ifStm (<- expr "test") (<- stmts "body") (<- stmts "orelse"))
     | _ => throw s!"unsupported python construct {key}"
 
-def arguments (j : Json) : Parser Args := do
-  let obj <- j.getObjVal? "arguments"
-  let arg? := field (opt arg) obj
-  let args := field (list arg) obj
-  let exprs := field (list expr) obj
-  return {
-    posonlyargs := (<- args "posonlyargs")
-    args        := (<- args "args")
-    defaults    := (<- exprs "defaults")
-    vararg      := (<- arg? "vararg")
-    kwonlyargs  := (<- args "kwonlyargs")
-    kw_defaults := (<- exprs "kw_defaults")
-    kwarg       := (<- arg? "kwarg")
-  }
-where
-  arg (j : Json) : Parser String := do
-    let obj <- j.getObjVal? "arg"
-    return (<- field str obj "arg")
-
-def function (j : Json) : Parser Fun := do
-  let source <- field str j "source"
-  withSrc source do
-    let args <- field arguments j "args"
-    let defaults <- field (list const) j "defaults"
-    let body <- field (list stmt) j "body"
-    return Fun.mk source args defaults body
-
 -- Both global references and arguments are processed in the global
 -- environment. These terms do not have a position, and must be
 -- evaluable in the default environment.
@@ -365,6 +336,29 @@ partial def global : Json -> Parser Expr'
 where
   globals (arr : Array Json) : Parser (List Expr) :=
     arr.toList.mapM fun x => return .exprPos (<- global x) {}
+
+def arguments (j : Json) : Parser Args := do
+  let obj <- j.getObjVal? "arguments"
+  return {
+    posonlyargs := (<- field (list arg)    obj "posonlyargs")
+    args        := (<- field (list arg)    obj "args")
+    defaults    := (<- field (list global) obj "defaults")
+    vararg      := (<- field (opt arg)     obj "vararg")
+    kwonlyargs  := (<- field (list arg)    obj "kwonlyargs")
+    kw_defaults := (<- field (dict global) obj "kw_defaults")
+    kwarg       := (<- field (opt arg)     obj "kwarg")
+  }
+where
+  arg (j : Json) : Parser String := do
+    let obj <- j.getObjVal? "arg"
+    return (<- field str obj "arg")
+
+def function (j : Json) : Parser Fun := do
+  let source <- field str j "source"
+  withSrc source do
+    let args <- field arguments j "args"
+    let body <- field (list stmt) j "body"
+    return Fun.mk source args body
 
 def kernel (j : Json) : Parser Kernel := do
   let name <- field str j "entry"

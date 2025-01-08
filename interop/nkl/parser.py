@@ -11,7 +11,7 @@ import numpy as np
 from textwrap import dedent
 from itertools import chain
 from collections import deque
-from nkl.lean import py_to_lean
+from nkl.lean_rffi import py_to_lean
 
 # This is a custom JSON encoder for use with AST nodes.
 # The AST nodes are not handled by the default encoder.
@@ -97,24 +97,28 @@ class Parser(ast.NodeVisitor):
   def load(self):
     py_to_lean(self.json())
 
-  def apply_args(self, *args, **kwargs):
-    self.args = []
-    self.kwargs = {}
+  def process_args(self, args, kwargs):
+    l = []
     d = {}
-    for arg in args:
-      self.reference(d, '_', arg)
-      try: self.args.append(d.popitem()[1])
-      except Exception:
-        raise Exception("Unsupported argument type")
-    for k,v in kwargs.items():
-      self.ref_arg(k, v)
+    if args:
+      for arg in args:
+        self.reference(d, '_', arg)
+        try: l.append(d.popitem()[1])
+        except Exception:
+          raise Exception("Unsupported argument type")
+    if kwargs:
+      for k,v in kwargs.items():
+        self.reference(d, k, v)
+    return l, d
+
+  def apply_args(self, *args, **kwargs):
+    l, d = self.process_args(args, kwargs)
+    self.args = l
+    self.kwargs = d
 
   def __call__(self, *args, **kwargs):
     self.apply_args(*args, **kwargs)
     py_to_lean(self.json())
-
-  def ref_arg(self, refname, val):
-    return self.reference(self.kwargs, refname, val)
 
   def ref_global(self, refname, val):
     return self.reference(self.globals, refname, val)
@@ -160,9 +164,11 @@ class Parser(ast.NodeVisitor):
     self.f = f
     for s in body:
       self.visit(s)
+    l, d = self.process_args(f.__defaults__, f.__kwdefaults__)
+    args.defaults = l
+    args.kw_defaults = d
     return { 'source': inspect.getsource(f)
            , 'args': args
-           , 'defaults': list(self.fun_defaults(f))
            , 'body': body
            }
 
@@ -201,20 +207,3 @@ class Parser(ast.NodeVisitor):
       raise e
     except Exception:
       return
-
-  def fun_defaults(self, f: types.FunctionType):
-    if f.__defaults__ is None:
-      return dict()
-    names = f.__code__.co_varnames[:f.__code__.co_argcount]
-    tbl = { n:v for (n,v) in zip(reversed(names), reversed(f.__defaults__)) }
-    if f.__kwdefaults__ is not None:
-      tbl.update(f.__kwdefaults__)
-    def is_ok(x):
-      if x is None or isinstance(x, (int, float, str)):
-        return True
-      if isinstance(x, types.FunctionType):
-        # TODO: this could be incorrect if default
-        # is using an alternate name for the function
-        self.ref_global(x.__name__, x)
-      return False
-    return { n:v for (n,v) in tbl.items() if is_ok(v) }
