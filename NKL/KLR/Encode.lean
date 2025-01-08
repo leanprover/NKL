@@ -3,7 +3,7 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.KLR
+import NKL.KLR.Basic
 
 /-!
 # Serialization and Deserialization
@@ -239,7 +239,7 @@ private def ie_var : IndexExpr := .var "s"
 def encIndex : Index -> ByteArray
   | .ellipsis    => tag 0x20 []
   | .coord e     => tag 0x21 [enc e]
-  | .range l u s => tag 0x22 [enc l, enc u, enc s]
+  | .slice l u s => tag 0x22 [enc l, enc u, enc s]
 where
   enc := encOption encIndexExpr
 
@@ -247,7 +247,7 @@ def decIndex : DecodeM Index := do
   match (<- next) with
   | 0x20 => return .ellipsis
   | 0x21 => return .coord (<- dec)
-  | 0x22 => return .range (<- dec) (<- dec) (<- dec)
+  | 0x22 => return .slice (<- dec) (<- dec) (<- dec)
   | t    => throw s!"Unknown tag in Index {t}"
 where
   dec:= decOption decIndexExpr
@@ -258,21 +258,17 @@ private def chkIndex (i : Index) : Bool :=
 #guard chkIndex .ellipsis
 #guard chkIndex (.coord none)
 #guard chkIndex (.coord $ some ie_var)
-#guard chkIndex (.range (some ie_var) none none)
+#guard chkIndex (.slice (some ie_var) none none)
 
 ------------------------------------------------------------------------------
 -- Expressions
 
 partial def encExpr : Expr -> ByteArray
-  | .var s            => tag 0x30 [encString s]
-  | .tensor t s       => tag 0x31 [encString t, encList encInt s]
-  | .const c          => tag 0x32 [encConst c]
-  | .tuple es         => tag 0x33 [encList encExpr es]
-  | .list es          => tag 0x34 [encList encExpr es]
-  | .access e ix      => tag 0x35 [encExpr e, encList encIndex ix]
-  | .binop op l r     => tag 0x36 [encString op, encExpr l, encExpr r]
-  | .unop op e        => tag 0x37 [encString op, encExpr e]
-  | .call f ax kw     => tag 0x38 [encExpr f, encList encExpr ax, encList encKeyword kw]
+  | .var s        => tag 0x30 [encString s]
+  | .tensor t     => tag 0x31 [encString t.dtype, encList encInt t.shape]
+  | .const c      => tag 0x32 [encConst c]
+  | .access e ix  => tag 0x33 [encExpr e, encList encIndex ix]
+  | .call f ax kw => tag 0x34 [encExpr f, encList encExpr ax, encList encKeyword kw]
 where
   encKeyword : String × Expr -> ByteArray
   | (key, expr) => (encString key).append (encExpr expr)
@@ -280,14 +276,10 @@ where
 partial def decExpr : DecodeM Expr := do
   match (<- next) with
   | 0x30 => return .var (<- decString)
-  | 0x31 => return .tensor (<- decString) (<- decList decInt)
+  | 0x31 => return .tensor $ .mk (<- decString) (<- decList decInt)
   | 0x32 => return .const (<- decConst)
-  | 0x33 => return .tuple (<- decList decExpr)
-  | 0x34 => return .list (<- decList decExpr)
-  | 0x35 => return .access (<- decExpr) (<- decList decIndex)
-  | 0x36 => return .binop (<- decString) (<- decExpr) (<- decExpr)
-  | 0x37 => return .unop (<- decString) (<- decExpr)
-  | 0x38 => return .call (<- decExpr) (<- decList decExpr) (<- decList decKeyword)
+  | 0x33 => return .access (<- decExpr) (<- decList decIndex)
+  | 0x34 => return .call (<- decExpr) (<- decList decExpr) (<- decList decKeyword)
   | t => throw s!"Unknown tag in Expr {t}"
 where
   decKeyword : DecodeM (String × Expr) :=
@@ -301,13 +293,9 @@ private def ixz := Index.coord (IndexExpr.int 0)
 
 #guard chkExpr nil
 #guard chkExpr (.var "var")
-#guard chkExpr (.tensor "float32" [1,2,3])
+#guard chkExpr (.tensor $ .mk "float32" [1,2,3])
 #guard chkExpr (.const (.int 1))
-#guard chkExpr (.tuple [nil, nil, nil])
-#guard chkExpr (.list [nil, nil, nil])
 #guard chkExpr (.access nil [ixz, ixz, ixz])
-#guard chkExpr (.binop "op" nil nil)
-#guard chkExpr (.unop "op" nil)
 #guard chkExpr (.call nil [nil, nil, nil] [("a", nil), ("b", nil)])
 
 ------------------------------------------------------------------------------
