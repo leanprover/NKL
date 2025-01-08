@@ -4,6 +4,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import NKL.Trace.Types
---import NKL.Trace.Basic
+import NKL.Trace.Basic
 import NKL.Trace.Builtin
 --import NKL.Trace.Python
