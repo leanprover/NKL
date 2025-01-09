@@ -118,11 +118,8 @@ def unOp : String -> Term -> TraceM Term
   | op, _ => throw s!"unimp {op}"
 
 -- Comparison operators
--- TODO: need to think about comparison of tensors, in NKI this is object equality,
--- but I suspect this doesn't make sense and may be a source of bugs.
 
 def cmpOp : String -> Term -> Term -> TraceM Bool
-  | "Eq", .expr l _, .expr r _ => return l == r
   | s, l, r => throw s!"unsupported comparison operator {s} {repr l} {repr r}"
 
 def compare : Term -> List String -> List Term -> TraceM Term
