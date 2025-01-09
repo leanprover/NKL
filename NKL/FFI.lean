@@ -5,6 +5,7 @@ Authors: Paul Govereau
 -/
 import Lean
 import NKL.Python
+import NKL.Trace
 
 namespace NKL
 
@@ -16,12 +17,6 @@ local instance : MonadLift (Except String) IO where
 @[export parse_json]
 def parse_json (s : String) : IO Unit := do
   let kernel <- Python.Parsing.parse s
-  let names := kernel.funcs.map fun x => x.fst
-  let names := String.intercalate "," names
-  IO.println s!"Found functions: {names}"
-  for x in kernel.args do
-    IO.println s!"arg: {repr x}"
-  for x in kernel.kwargs do
-    IO.println s!"arg: {repr x}"
-  for x in kernel.globals do
-    IO.println s!"global: {repr x}"
+  let stmts <- NKL.Trace.runNKIKernel kernel
+  for s in stmts do
+    IO.println s!"{repr s}"

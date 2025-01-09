@@ -106,11 +106,11 @@ then the structure will be populated with:
   defaults = [1, 2]
   vararg = "args"
   kwonlyargs = [d, e]
-  kw_defaults = [None, 3]
+  kw_defaults = [("e", 3)]
   kwarg = "kwargs"
 
-Note, defaults and kw_defaults are inconsistent in how they treat
-missing arguments, but this is just how it works in the python AST.
+Note, this is slightly different from the official Python AST, which
+encodes the kw_defaults as a list with None for missing defaults.
 -/
 structure Args where
   posonlyargs : List String
@@ -122,17 +122,13 @@ structure Args where
   kwarg : Option String
   deriving Repr
 
-def Args.names (ax : Args) : List String :=
-  let xs := ax.posonlyargs.append ax.args
-  let xs := match ax.vararg with | none => xs | some x => xs.append [x]
-  let xs := xs.append ax.kwonlyargs
-  let xs := match ax.kwarg  with | none => xs | some x => xs.append [x]
-  xs
+def Args.names (args : Args) : List String :=
+  args.posonlyargs ++ args.args ++ args.kwonlyargs
 
-def Args.all_defaults (ax : Args) : List (String × Expr') :=
-  let args := ax.posonlyargs ++ ax.args
-  let dflt := args.reverse.zip ax.defaults.reverse
-  dflt ++ ax.kw_defaults
+def Args.all_defaults (args : Args) : List (String × Expr') :=
+  let pargs := args.posonlyargs ++ args.args
+  let dflt  := pargs.reverse.zip args.defaults.reverse
+  dflt ++ args.kw_defaults
 
 structure Fun where
   source : String
