@@ -265,7 +265,7 @@ private def chkIndex (i : Index) : Bool :=
 
 partial def encExpr : Expr -> ByteArray
   | .var s        => tag 0x30 [encString s]
-  | .tensor t     => tag 0x31 [encString t.dtype, encList encInt t.shape]
+  | .tensor t     => tag 0x31 [encString t.name, encString t.dtype, encList encInt t.shape]
   | .const c      => tag 0x32 [encConst c]
   | .access e ix  => tag 0x33 [encExpr e, encList encIndex ix]
   | .call f ax kw => tag 0x34 [encExpr f, encList encExpr ax, encList encKeyword kw]
@@ -276,7 +276,7 @@ where
 partial def decExpr : DecodeM Expr := do
   match (<- next) with
   | 0x30 => return .var (<- decString)
-  | 0x31 => return .tensor $ .mk (<- decString) (<- decList decInt)
+  | 0x31 => return .tensor $ .mk (<- decString) (<- decString) (<- decList decInt)
   | 0x32 => return .const (<- decConst)
   | 0x33 => return .access (<- decExpr) (<- decList decIndex)
   | 0x34 => return .call (<- decExpr) (<- decList decExpr) (<- decList decKeyword)
@@ -293,7 +293,7 @@ private def ixz := Index.coord (IndexExpr.int 0)
 
 #guard chkExpr nil
 #guard chkExpr (.var "var")
-#guard chkExpr (.tensor $ .mk "float32" [1,2,3])
+#guard chkExpr (.tensor $ .mk "t" "float32" [1,2,3])
 #guard chkExpr (.const (.int 1))
 #guard chkExpr (.access nil [ixz, ixz, ixz])
 #guard chkExpr (.call nil [nil, nil, nil] [("a", nil), ("b", nil)])
