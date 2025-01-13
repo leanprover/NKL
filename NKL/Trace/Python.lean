@@ -116,7 +116,8 @@ partial def expr' : Expr' -> Tracer Item
   | .const c => return .term (<- const c)
   | .tensor s dty => do
       let shape <- s.mapM integer
-      return .term (.expr (.tensor ⟨ dty, shape ⟩) (.tensor dty shape))
+      let name <- genName "t".toName
+      return .term (.expr (.tensor ⟨ name.toString, dty, shape ⟩) (.tensor dty shape))
   | .name id _ => lookup_item id.toName
   | .attr (.exprPos e p) id _ => do withPos p ((<- expr' e).attr id)
   | .tuple l _ => return .term (.tuple (<- l.mapM term))
@@ -190,6 +191,7 @@ partial def stmt' : Stmt' -> Tracer Unit
 partial def bind_args (f : Fun)
                       (args : List Term)
                       (kwargs : List (String × Term))
+                      (rename : Bool := false)
                       : Tracer (List (String × Term)) := do
   if f.args.vararg != none || f.args.kwarg != none then
     throw "var args not supported"
@@ -208,7 +210,13 @@ partial def bind_args (f : Fun)
       return (x, <- term' e)
     else
       throw s!"argument {x} not supplied"
+  -- rename tensors if asked to
+  let argmap := if rename then argmap.map renameTensors else argmap
   return argmap
+where
+  renameTensors : String × Term -> String × Term
+  | (s, .expr (.tensor t) ty) => (s, .expr (.tensor {t with name := s}) ty)
+  | other => other
 
 -- For a function call, first evaluate the argument in the current environment.
 -- Then enter a new environment and evaluate the function statements.
@@ -216,8 +224,7 @@ partial def function_call (f : Fun)
                           (args : List Term)
                           (kwargs : List (String × Term))
                           : Tracer Unit := do
-  let args <- bind_args f args kwargs
-  --let args <- args.mapM fun (x,e) => return (x, e)
+  let args <- bind_args f args kwargs (rename:=true)
   withSrc f.source $ enterFun $ do
     args.forM fun (x,e) => do extend x.toName e
     f.body.forM stmt

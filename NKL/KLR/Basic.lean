@@ -14,16 +14,22 @@ portable format, a.k.a. Kernel Language Representation (KLR).
 
 namespace NKL.KLR
 
--- TODO switch to tensor lib
+-- TODO switch to TensorLib's version of these types
 --export TensorLib (Tensor Dtype Shape)
--- Mostly, NKL deals with empty tensors, so just check dtype and shape
--- TODO: talk to Sean about a more general BEq for Tensor
---instance : BEq Tensor where
---  beq t₁ t₂ := t₁.dtype == t₂.dtype && t₁.shape == t₂.shape
 
 abbrev Dtype := String
 abbrev Shape := List Int
-structure Tensor where
+
+/-
+A TensorName is essentially a typed variable, where the type
+must be a tensor type. When we flush out Typ below we may replace
+this with `Expr.var name (Typ.tensor dtype shape)`. For now, this
+only refers to dynamic tensors, or compile-time tensors, not
+trace-time tensors.
+-/
+
+structure TensorName where
+  name  : String
   dtype : Dtype
   shape : Shape
   deriving Repr, BEq
@@ -71,7 +77,7 @@ def toInt : Const -> Except String Int
 
 end Const
 
--- This correspondes to the "Quasi-Affine Expressions" in Neuron.
+-- This corresponds to the "Quasi-Affine Expressions" in Neuron.
 -- Note, `floor` is the usual integer division.
 inductive IndexExpr where
   | var (name : String)
@@ -94,7 +100,7 @@ inductive Index where
 inductive Expr where
   | var (x : String)
   | const (c : Const)
-  | tensor (t : Tensor)
+  | tensor (t : TensorName)
   | access (t : Expr) (ix : List Index)
   | call (f : Expr) (args : List Expr) (kwargs : List (String × Expr))
   deriving Repr, BEq

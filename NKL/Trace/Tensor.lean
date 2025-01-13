@@ -23,21 +23,21 @@ private def tensor_call (op : String) (args : List Expr) : Term :=
 
 -- Unary operations on tensors
 
-def tensor_op (op : String) (t : Tensor) : TraceM Term :=
+def tensor_op (op : String) (t : TensorName) : TraceM Term :=
   return tensor_call op [.tensor t]
 
 -- Binary operations on tensors / scalars
 
-def tensor_tensor (op : String) (l r : Tensor) : TraceM Term :=
+def tensor_tensor (op : String) (l r : TensorName) : TraceM Term :=
   return tensor_call op [.tensor l, .tensor r]
 
-private def broadcast (t : Tensor) (c : Const) : Expr :=
+private def broadcast (t : TensorName) (c : Const) : Expr :=
   let args := t.shape.map fun i => Expr.const (.int i)
   let args := .const c :: args
   .call (.var "broadcast") args []
 
-def tensor_scalar (op : String) (t : Tensor) (c : Const) : TraceM Term :=
+def tensor_scalar (op : String) (t : TensorName) (c : Const) : TraceM Term :=
   return tensor_call op [ .tensor t, broadcast t c]
 
-def scalar_tensor (op : String) (c : Const) (t : Tensor) : TraceM Term :=
+def scalar_tensor (op : String) (c : Const) (t : TensorName) : TraceM Term :=
   return tensor_call op [ .tensor t, broadcast t c]
