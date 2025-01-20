@@ -65,6 +65,20 @@ def expr_bool_op(t):
   1 or None  # evals to 1
   (False,) or 1  # evals to (False,)
 
+def assign(t):
+  x = y = 1
+  assert x == y
+  x, y = [1,2]
+  assert x == 1
+  assert y == 2
+  (x,y), z = a, [b,c] = ((1,2),(3,4))
+  assert x == 1
+  assert y == 2
+  assert z == (3,4)
+  assert a == (1,2)
+  assert b == 3
+  assert c == 4
+
 @pytest.mark.parametrize("f", [
   const_stmt,
   expr_name,
@@ -72,6 +86,7 @@ def expr_bool_op(t):
   expr_list,
   expr_subscript,
   expr_bool_op,
+  assign
   ])
 def test_succeed(f):
   t = np.ndarray(10)
