@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
+import NKL.Util
 
 /-!
 # Abstract syntax of Python functions
@@ -172,12 +173,7 @@ open Lean
 -- span (Pos) is saved while traversing the tree to identify the location
 -- of any errors in the original program
 
-abbrev Parser := EStateM String Pos
-
-local instance : MonadLift (Except String) Parser where
-  monadLift
-    | .ok x => return x
-    | .error s => throw s
+abbrev Parser := StM Pos
 
 private def str : Json -> Parser String :=
   monadLift ∘ Json.getStr?
@@ -364,7 +360,7 @@ def kernel (j : Json) : Parser Kernel := do
   let globals <- field (dict global) j "globals"
   return Kernel.mk name funcs args kwargs globals
 
-def parse (s : String) : Except String Kernel := do
+def parse (s : String) : Err Kernel := do
   let jsn <- Json.parse s
   match kernel jsn {} with
   | .ok x _ => .ok x

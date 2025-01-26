@@ -11,7 +11,7 @@ import NKL.Trace
 namespace NKL
 open NKL.KLR
 
-local instance : MonadLift (Except String) IO where
+local instance : MonadLift Err IO where
   monadLift
     | .ok x => return x
     | .error s => throw $ .userError s
@@ -21,4 +21,4 @@ def parse_json (s : String) : IO Unit := do
   let kernel <- Python.Parsing.parse s
   let stmts <- NKL.Trace.runNKIKernel kernel
   for s in stmts do
-    IO.println ("  " ++ Lean.format s) --s!"{s}\n{repr s}"
+    IO.println ("  " ++ Lean.format s)

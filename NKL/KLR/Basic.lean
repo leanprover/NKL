@@ -45,38 +45,6 @@ inductive Const where
   | string (value : String)
   deriving Repr, BEq
 
-namespace Const
-
--- Python-like rules for conversion to boolean
-def isTrue : Const -> Bool
-  | .none     => false
-  | .bool b   => b
-  | .int i    => i != 0
-  | .float f  => f != 0.0
-  | .string s => s != ""
-
--- Python-like rules for conversion to integer
-def toInt : Const -> Except String Int
-  | .none       => throw "none cannot be converted to an integer"
-  | .bool true  => return 1
-  | .bool false => return 0
-  | .int i      => return i
-  | .float f    =>
-      -- Python is a bit strange here, it truncates both
-      -- positive and negative numbers toward zero
-      if f < 0.0 then
-        return (Int.ofNat (Float.floor (-f)).toUInt64.toNat).neg
-      else
-        return Int.ofNat (Float.floor f).toUInt64.toNat
-  | .string s   =>
-      -- Fortunately, Lean's String.toInt appears to be compatible
-      -- with Python's int(string) conversion.
-      match s.toInt? with
-      | .none  => throw s!"string {s} cannot be converted to an integer"
-      | .some i => return i
-
-end Const
-
 -- This corresponds to the "Quasi-Affine Expressions" in Neuron.
 -- Note, `floor` is the usual integer division.
 inductive IndexExpr where
