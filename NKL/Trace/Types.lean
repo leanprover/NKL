@@ -4,6 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
+import NKL.Util
 import NKL.KLR
 import NKL.Python
 
@@ -65,8 +66,6 @@ open NKL.KLR
 export Lean (Name)
 deriving instance Ord for Name
 
-abbrev ErrorM := Except String
-
 -- Terms are an extension of KLR.Expr, and they have types, which may be `any`.
 -- TODO: can we get rid of any?
 
@@ -84,8 +83,8 @@ mutual
 structure Object where
   name : Name
   type : TermType
-  attr : String -> Except String Term
-  call : List Expr -> List (String × Expr) -> Except String Term
+  attr : String -> Err Term
+  call : List Expr -> List (String × Expr) -> Err Term
 
 inductive Term where
   | object : Object -> Term
@@ -114,11 +113,17 @@ where
 
 instance : BEq Term where beq := Term.beq
 
-partial def Term.type : Term -> ErrorM TermType
+def Term.type : Term -> Err TermType
   | .object obj => return obj.type
-  | .tuple l    => return .tuple (<- l.mapM Term.type)
-  | .list l     => return .tuple (<- l.mapM Term.type)
+  | .tuple l    => return .tuple (<- Term.type ▷ l)
+  | .list l     => return .tuple (<- Term.type ▷ l)
   | .expr _ ty  => return ty
+
+def Term.toKLR : Term -> Err KLR.Expr
+  | .object obj => return .var obj.name.toString
+  | .tuple _    => throw "tuple cannot be converted to a KLR term"
+  | .list _     => throw "list cannot be converted to a KLR term"
+  | .expr e _   => return e
 
 -- Our state has a number for generating fresh names, the current source
 -- location (for error reporting), and the local environment. The global
@@ -142,15 +147,10 @@ def contains (s : State) (n : Name) : Bool :=
 
 end State
 
-abbrev TraceM := EStateM String State
-
-instance : MonadLift ErrorM TraceM where
-  monadLift
-    | .ok x => return x
-    | .error s => throw s
+abbrev TraceM := StM State
 
 -- Run a trace with an empty initial environment
-def trace (m : TraceM a) : ErrorM a :=
+def trace (m : TraceM a) : Err a :=
   match m.run { } with
   | .ok x _ => return x
   | .error s _ => throw s
@@ -221,11 +221,17 @@ inductive Item where
   | source : Python.Fun -> Item
   | term   : Term -> Item
 
-def Item.type : Item -> ErrorM TermType
+def Item.type : Item -> Err TermType
   | .module n => return .any n
   | .global g => return .any g.name
   | .source _ => return .any "source".toName
   | .term   t => t.type
+
+def Item.toTerm : Item -> Err Term
+  | .module n   => return .expr (.var n.toString) (.any "?".toName)
+  | .global g   => return .expr (.var g.name.toString) (.any "?".toName)
+  | .source _   => throw "invalid use of source function"
+  | .term t     => return t
 
 structure Globals where
   env  : Lean.RBMap Name Item compare
@@ -285,7 +291,7 @@ def lookup_item (name : Name) : Tracer Item := do
 def add_stmt (s : Stmt) : Tracer Unit :=
   modify fun g => { g with body := g.body.push s }
 
-def tracer (g : Globals) (m : Tracer a) : ErrorM a :=
+def tracer (g : Globals) (m : Tracer a) : Err a :=
   match trace (m.run g) with
   | .ok x => .ok x.fst
   | .error s => .error s

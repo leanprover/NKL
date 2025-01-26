@@ -13,7 +13,7 @@ import NKL.Trace.NKI
 
 namespace NKL.Trace
 
-def runNKIKernel (k : NKL.Python.Kernel) : Except String (List NKL.KLR.Stmt) :=
+def runNKIKernel (k : NKL.Python.Kernel) : Err (List NKL.KLR.Stmt) :=
   tracer ⟨ .ofList NKIEnv, #[] ⟩ do
     traceKernel k
     let g <- get

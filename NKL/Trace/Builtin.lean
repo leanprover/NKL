@@ -14,10 +14,10 @@ import NKL.Trace.Types
 namespace NKL.Trace
 open NKL.KLR
 
-abbrev BuiltinAttr := String -> ErrorM Term
+abbrev BuiltinAttr := String -> Err Term
 abbrev GlobalAttr  := String -> TraceM Term
 
-abbrev BuiltinFn := List Expr -> List (String × Expr) -> ErrorM Term
+abbrev BuiltinFn := List Expr -> List (String × Expr) -> Err Term
 abbrev GlobalFn  := List Term -> List (String × Term) -> TraceM Term
 
 def noattrs [Monad m] [MonadExcept String m] : Name -> String -> m a :=
@@ -61,7 +61,7 @@ def simple_object {a : Type}
   , call := uncallable name
   }
 where
-  attr_fn (attr : String) : Except String Term :=
+  attr_fn (attr : String) : Err Term :=
     match attrs.find? (fun x => x.fst == attr) with
     | none => .error s!"{attr} is not an attribute of {name}"
     | some (_,fn) => .ok (.object $ simple_function (name.str attr) (fn x))

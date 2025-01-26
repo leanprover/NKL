@@ -12,7 +12,7 @@ import NKL.Trace.Basic
 namespace NKL.Trace
 open NKL.Python
 
-def const : Const -> ErrorM Term
+def const : Const -> Err Term
   | .none     => return .expr (.const $ .none)     .none
   | .bool b   => return .expr (.const $ .bool b)   .bool
   | .int i    => return .expr (.const $ .int i)    .int
@@ -132,21 +132,21 @@ dead-code elimination for simple assignments.
 -/
 
 -- Convert an expression in assignment context (an L-Value).
-partial def LValue : Expr -> Tracer Term
+def LValue : Expr -> Tracer Term
   | .exprPos e' p => withPos p (lval e')
 where
   lval : Expr' -> Tracer Term
   | .name id .store => return .expr (.var id) (.any "?".toName)
-  | .tuple l .store => return .tuple (<- l.mapM LValue)
-  | .list  l .store => return .list  (<- l.mapM LValue)
+  | .tuple l .store => return .tuple (<- LValue ▷ l)
+  | .list  l .store => return .list  (<- LValue ▷ l)
   | _ => throw "cannot assign to expression"
 
 -- Convert an R-Value to a pure expression, emitting
 -- additional assignments as needed.
-partial def RValue : Term -> Tracer Term
+def RValue : Term -> Tracer Term
   | .object o => return .object o
-  | .tuple  l => return .tuple (<- l.mapM RValue)
-  | .list   l => return .list  (<- l.mapM RValue)
+  | .tuple  l => return .tuple (<- RValue ▷ l)
+  | .list   l => return .list  (<- RValue ▷ l)
   | .expr e@(.call _ _ _) ty => do
        let v := (<- genName).toString
        add_stmt (.assign v e)
@@ -197,45 +197,37 @@ mutual
 partial def expr : Expr -> Tracer Item
   | .exprPos e' p => withPos p (expr' e')
 
-partial def term (e : Expr) : Tracer Term := do
-  match (<- expr e) with
-  | .module n   => return .expr (.var n.toString) (.any "?".toName)
-  | .global g   => return .expr (.var g.name.toString) (.any "?".toName)
-  | .source _   => throw "invalid use of source function"
-  | .term t     => return t
+partial def term (e : Expr) : Tracer Term :=
+  return <- (<- expr e).toTerm
 
-partial def term' (e : Expr') : Tracer Term := do
-  term (.exprPos e (<- getPos))
+partial def term' (e : Expr') : Tracer Term :=
+  return <- (<- expr' e).toTerm
 
-partial def klr (e : Expr) : Tracer KLR.Expr := do
-  match (<- term e) with
-  | .object obj => return .var obj.name.toString
-  | .tuple _    => throw "tuple cannot be converted to a KLR term"
-  | .list _     => throw "list cannot be converted to a KLR term"
-  | .expr e _   => return e
+partial def klr (e : Expr) : Tracer KLR.Expr :=
+  return <- (<- term e).toKLR
 
 partial def integer (e : Expr) : Tracer Int := do
-  match (<- term e) with
-  | .expr (.const c) _ => return (<- c.toInt)
-  | _ => throw "invalid tensor dimension"
+  match <- klr e with
+    | .const c => return (<- c.toInt)
+    | _ => throw "expecting integer"
 
 partial def expr' : Expr' -> Tracer Item
   | .const c => return .term (<- const c)
   | .tensor s dty => do
-      let shape <- s.mapM integer
+      let shape <- integer ▷ s
       let name <- genName "t".toName
       return .term (.expr (.tensor ⟨ name.toString, dty, shape ⟩) (.tensor dty shape))
   | .name id _ => lookup_item id.toName
   | .attr (.exprPos e p) id _ => do withPos p ((<- expr' e).attr id)
-  | .tuple l _ => return .term (.tuple (<- l.mapM term))
-  | .list  l _ => return .term (.list  (<- l.mapM term))
+  | .tuple l _ => return .term (.tuple (<- term ▷ l))
+  | .list  l _ => return .term (.list  (<- term ▷ l))
   | .subscript t [ .exprPos (.tuple ix _) _ ] _
-  | .subscript t ix _ => return .term (<- access (<- term t) (<- ix.mapM index))
+  | .subscript t ix _ => return .term (<- access (<- term t) (<- index ▷ ix))
   | .slice _ _ _ => throw "syntax error"
-  | .boolOp op xs => return .term (<- boolOp op (<- xs.mapM term))
+  | .boolOp op xs => return .term (<- boolOp op (<- term ▷ xs))
   | .binOp op l r => return .term (<- binOp op (<- term l) (<- term r))
   | .unaryOp op e => return .term (<- unOp op (<- term e))
-  | .compare l ops cs => return .term (<- compare (<- term l) ops (<- cs.mapM term))
+  | .compare l ops cs => return .term (<- compare (<- term l) ops (<- term ▷ cs))
   | .ifExp tst tru fls => do
       let tst <- (<- term tst).isTrue
       let tru <- expr tru  -- eagerly evaluate both branches
@@ -244,10 +236,10 @@ partial def expr' : Expr' -> Tracer Item
   | .call f args kws => do
       match <- expr f with
       | .module n => throw s!"module {n} not callable"
-      | .global g => return .term (<- g.call (<- args.mapM term) (<- kws.mapM (keyword term)))
-      | .term t   => return .term (<- t.call (<- args.mapM klr) (<- kws.mapM (keyword klr)))
+      | .global g => return .term (<- g.call (<- term ▷ args) (<- keyword term ▷ kws))
+      | .term t   => return .term (<- t.call (<- klr ▷ args) (<- keyword klr ▷ kws))
       | .source f => do
-          function_call f (<- args.mapM term) (<- kws.mapM (keyword term))
+          function_call f (<- term ▷ args) (<- keyword term ▷ kws)
           return .term (.expr (.const .none) .none)
 
 partial def keyword (f : Expr -> Tracer a) : Keyword -> Tracer (String × a)
@@ -263,7 +255,7 @@ partial def stmt' : Stmt' -> Tracer Unit
   | .assert e => do
       let t <- term e
       if (<- t.isFalse) then throw "assertion failed"
-  | .assign xs e => do assign (<- xs.mapM LValue) (<- term e)
+  | .assign xs e => do assign (<- LValue ▷ xs) (<- term e)
   | .augAssign x op e => do
       stmt' (.assign [x] (.exprPos (.binOp op x e) (<- getPos)))
   | .annAssign _ _ .none => return ()
@@ -349,7 +341,7 @@ def traceKernel (k : Kernel) : Tracer Unit := do
       let kwargs <- k.kwargs.mapM fun (x,e) => return (x, <- term' e)
       function_call f args kwargs
 
-def runKernel (k : Kernel) : Except String (List KLR.Stmt) :=
+def runKernel (k : Kernel) : Err (List KLR.Stmt) :=
   tracer ⟨ ∅, #[] ⟩ do
     traceKernel k
     let g <- get

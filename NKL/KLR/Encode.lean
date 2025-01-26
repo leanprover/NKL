@@ -3,6 +3,7 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
+import NKL.Util
 import NKL.KLR.Basic
 
 /-!
@@ -12,15 +13,15 @@ import NKL.KLR.Basic
 
 namespace NKL.KLR
 
--- All of the encode function are pure; decoding uses an instance of EStateM.
+-- All of the encode function are pure; decoding uses an instance of StM.
 
-abbrev DecodeM := EStateM String ByteArray.Iterator
+abbrev DecodeM := StM ByteArray.Iterator
 
 def decode' (f : DecodeM a) (ba : ByteArray) : Option a :=
-  EStateM.run' f ba.iter
+  f.run' ba.iter
 
-def decode (f : DecodeM a) (ba : ByteArray) : Except String a :=
-  match EStateM.run f ba.iter with
+def decode (f : DecodeM a) (ba : ByteArray) : Err a :=
+  match f.run ba.iter with
   | .ok x _ => .ok x
   | .error s _ => .error s
 

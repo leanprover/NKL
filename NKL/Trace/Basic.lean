@@ -13,12 +13,44 @@ import NKL.Trace.Tensor
 Basic tracing definitions only deal with Terms (not Python sources)
 -/
 
+namespace NKL.KLR.Const
+
+-- Python-like rules for conversion to boolean
+def isTrue : Const -> Bool
+  | .none     => false
+  | .bool b   => b
+  | .int i    => i != 0
+  | .float f  => f != 0.0
+  | .string s => s != ""
+
+-- Python-like rules for conversion to integer
+def toInt : Const -> Err Int
+  | .none       => throw "none cannot be converted to an integer"
+  | .bool true  => return 1
+  | .bool false => return 0
+  | .int i      => return i
+  | .float f    =>
+      -- Python is a bit strange here, it truncates both
+      -- positive and negative numbers toward zero
+      if f < 0.0 then
+        return (Int.ofNat (Float.floor (-f)).toUInt64.toNat).neg
+      else
+        return Int.ofNat (Float.floor f).toUInt64.toNat
+  | .string s   =>
+      -- Fortunately, Lean's String.toInt appears to be compatible
+      -- with Python's int(string) conversion.
+      match s.toInt? with
+      | .none  => throw s!"string {s} cannot be converted to an integer"
+      | .some i => return i
+
+end NKL.KLR.Const
+
 namespace NKL.Trace
 open NKL.KLR
 
 -- Operators within index expressions
 
-def indexBinOp : String -> KLR.IndexExpr -> KLR.IndexExpr -> ErrorM KLR.IndexExpr
+def indexBinOp : String -> KLR.IndexExpr -> KLR.IndexExpr -> Err KLR.IndexExpr
   | "Add" ,      l,      r => return .add l r
   | "Sub" ,      l,      r => return .add l r.neg
   | "Mult", .int i,      e
@@ -27,7 +59,7 @@ def indexBinOp : String -> KLR.IndexExpr -> KLR.IndexExpr -> ErrorM KLR.IndexExp
   | "Mod" ,      e, .int i => return .mod e i
   | _, _, _ => throw "invalid index expression"
 
-def indexUnOp : String -> KLR.IndexExpr -> ErrorM KLR.IndexExpr
+def indexUnOp : String -> KLR.IndexExpr -> Err KLR.IndexExpr
   | "USub", e => return .neg e
   | _, _ => throw "invalid index expresssion"
 
