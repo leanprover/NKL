@@ -1,3 +1,7 @@
+# This file exercises the Lean partial evaluator with
+# a set of basic unit tests. Each function is parsed,
+# handed to Lean, where it is checked and reduced to KLR.
+
 import numpy as np
 import nki
 import pytest
@@ -65,6 +69,28 @@ def expr_bool_op(t):
   1 or None  # evals to 1
   (False,) or 1  # evals to (False,)
 
+def expr_cmp_op(t):
+  assert 1 == 1
+  assert [] == []
+  assert not ([1,2] == [1])
+  assert not ([] < [])
+  assert [] < [1]
+  assert not ([1,2] < [1,2])
+  assert [1,1] < [1,2]
+  assert [1,2] < [1,2,3]
+  assert 1.2 < 2
+  assert 1 < 1.2
+  assert 1.2 < 1.3
+  assert 0.5 < True
+  assert not (0.5 < False)
+  assert "a" < "ab"
+  assert (1,2) is (1,2)
+  assert not ([1,2] is [1,2])
+  assert 1 in (1,2)
+  assert 1 in [3,2,1]
+  assert 1 not in (2,3,4)
+  assert 1 not in []
+
 def assign(t):
   x = y = 1
   assert x == y
@@ -79,6 +105,7 @@ def assign(t):
   assert b == 3
   assert c == 4
 
+# test each function in turn
 @pytest.mark.parametrize("f", [
   const_stmt,
   expr_name,
@@ -86,12 +113,13 @@ def assign(t):
   expr_list,
   expr_subscript,
   expr_bool_op,
+  expr_cmp_op,
   assign
   ])
 def test_succeed(f):
   t = np.ndarray(10)
-  F = Parser(f)
-  F(t)
+  F = Parser(f)   # parse python
+  F(t)            # specialize, and reduce to KLR
 
 # Failing cases
 # (These functions are expected to fail elaboration to KLR)

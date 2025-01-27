@@ -208,8 +208,8 @@ partial def klr (e : Expr) : Tracer KLR.Expr :=
 
 partial def integer (e : Expr) : Tracer Int := do
   match <- klr e with
-    | .const c => return (<- c.toInt)
-    | _ => throw "expecting integer"
+  | .const c => return (<- c.toInt)
+  | _ => throw "expecting integer"
 
 partial def expr' : Expr' -> Tracer Item
   | .const c => return .term (<- const c)
