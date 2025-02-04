@@ -2,16 +2,19 @@
 # Released under Apache 2.0 license as described in the file LICENSE.
 # Authors: Paul Govereau
 
-import types
-import inspect
 import ast
+import inspect
 import json
 import numpy as np
+import os
+import subprocess
+import sys
+import tempfile
+import types
 
-from textwrap import dedent
-from itertools import chain
 from collections import deque
-from nkl.lean_rffi import py_to_lean
+from itertools import chain
+from textwrap import dedent
 
 # This is a custom JSON encoder for use with AST nodes.
 # The AST nodes are not handled by the default encoder.
@@ -93,10 +96,6 @@ class Parser(ast.NodeVisitor):
         }
     return json.dumps(d, cls=Enc)
 
-  # TODO: just a placeholder for testing
-  def load(self):
-    py_to_lean(self.json())
-
   def process_args(self, args, kwargs):
     l = []
     d = {}
@@ -118,7 +117,23 @@ class Parser(ast.NodeVisitor):
 
   def __call__(self, *args, **kwargs):
     self.apply_args(*args, **kwargs)
-    py_to_lean(self.json())
+    json_kernel = self.json()
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
+      temp_file.write(json_kernel)
+      temp_file.flush()
+      temp_filename = temp_file.name
+      print("json file: " + temp_filename)
+      klr_filename = temp_filename + ".klr"
+      with open(klr_filename, 'w') as klr_file:
+        dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+          subprocess.run(dir + "/bin/klr parse-json " + temp_filename, stdout=klr_file, shell=True, check=False)
+        except Exception as e:
+          print (e)
+          sys.exit(1)
+        with open(klr_filename, 'r') as file:
+          klr = file.read()
+          return klr
 
   def ref_global(self, refname, val):
     return self.reference(self.globals, refname, val)

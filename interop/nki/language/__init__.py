@@ -1470,4 +1470,3 @@ def zeros_like(a, dtype=None, buffer=None, name="", **kwargs):
   :return: a tensor of zeros with the same shape and type as a given tensor.
   """
   ...
-
