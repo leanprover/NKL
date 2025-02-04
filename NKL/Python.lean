@@ -49,6 +49,28 @@ inductive Ctx where
   | load | store | del
   deriving Repr
 
+-- Python boolean operators
+inductive BoolOp where
+  | and | or
+  deriving Repr
+
+-- Python comparison operators
+inductive CmpOp where
+  | eq | ne | lt | le | gt | ge | is | isNot | isIn | notIn
+  deriving Repr
+
+-- Python unary operators
+inductive UnaryOp where
+  | invert | not | uadd | usub
+  deriving Repr
+
+-- Python binary operators
+inductive BinOp where
+  | add | sub | mul | matmul | div | mod | pow
+  | lshift | rshift | or | xor | and
+  | floor
+  deriving Repr
+
 mutual
 inductive Expr where
   | exprPos (expr : Expr') (pos : Pos)
@@ -61,12 +83,12 @@ inductive Expr' where
   | attr (value : Expr) (id : String) (ctx : Ctx)
   | tuple (xs: List Expr) (ctx : Ctx)
   | list (xs: List Expr) (ctx : Ctx)
-  | subscript (tensor: Expr) (ix: List Expr) (ctx : Ctx)
+  | subscript (tensor: Expr) (index: Expr) (ctx : Ctx)
   | slice (l u step: Option Expr)
-  | boolOp (op : String) (values : List Expr)
-  | binOp (op : String) (left right : Expr)
-  | unaryOp (op : String) (operand : Expr)
-  | compare (left : Expr) (ops : List String) (comparators : List Expr)
+  | boolOp (op : BoolOp) (values : List Expr)
+  | binOp (op : BinOp) (left right : Expr)
+  | unaryOp (op : UnaryOp) (operand : Expr)
+  | compare (left : Expr) (ops : List CmpOp) (comparators : List Expr)
   | ifExp (test body orelse : Expr)
   | call (f: Expr) (args: List Expr) (keywords : List Keyword)
   deriving Repr
@@ -87,7 +109,7 @@ inductive Stmt' where
   | assert (e : Expr)
   | ret (e: Expr)
   | assign (xs: List Expr) (e: Expr)
-  | augAssign (x : Expr) (op : String) (e : Expr)
+  | augAssign (x : Expr) (op : BinOp) (e : Expr)
   | annAssign (x : Expr) (annotation : Expr) (value : Option Expr)
   | forLoop (x : Expr) (iter: Expr) (body: List Stmt) (orelse : List Stmt)
   | ifStm (e : Expr) (thn els: List Stmt)
@@ -252,11 +274,59 @@ def exprCtx : Json -> Parser Ctx
   | .str "Del" => return .del
   | _ => throw "expecting ctx"
 
+def boolOp (j : Json) : Parser BoolOp := do
+  match <- str j with
+  | "And" => return .and
+  | "Or" => return .or
+  | s => throw s!"unknown operator {s}"
+
+def cmpOp (j : Json) : Parser CmpOp := do
+  match <- str j with
+  | "Eq" => return .eq
+  | "NotEq" => return .ne
+  | "Lt" => return .lt
+  | "LtE" => return .le
+  | "Gt" => return .gt
+  | "GtE" => return .ge
+  | "Is" => return .is
+  | "IsNot" => return .isNot
+  | "In" => return .isIn
+  | "NotIn" => return .notIn
+  | s => throw s!"unknown operator {s}"
+
+def unaryOp (j: Json) : Parser UnaryOp := do
+  match <- str j with
+  | "Invert" => return .invert
+  | "Not" => return .not
+  | "UAdd" => return .uadd
+  | "USub" => return .usub
+  | s => throw s!"unknown operator {s}"
+
+def binOp (j: Json) : Parser BinOp := do
+  match <- str j with
+  | "Add" => return .add
+  | "Sub" => return .sub
+  | "Mult" => return .mul
+  | "MatMult" => return .matmul
+  | "Div" => return .div
+  | "Mod" => return .mod
+  | "Pow" => return .pow
+  | "LShift" => return .lshift
+  | "RShift" => return .rshift
+  | "BitOr" => return .or
+  | "BitXor" => return .xor
+  | "BitAnd" => return .and
+  | "FloorDiv" => return .floor
+  | s => throw s!"unknown operator {s}"
+
 partial def expr (j : Json) : Parser Expr :=
   withPos expr' Expr.exprPos j
 where
   expr' (key : String) (j : Json) : Parser Expr' := do
-    let strs := field (list str) j
+    let boolOp := field boolOp j
+    let binOp := field binOp j
+    let unaryOp := field unaryOp j
+    let cmpOps := field (list cmpOp) j
     let str := field str j
     let ctx := field exprCtx j
     let const := field const j
@@ -270,12 +340,12 @@ where
     | "Attribute" => return (.attr (<- expr "value") (<- str "attr") (<- ctx "ctx"))
     | "Tuple" => return (.tuple (<- exprs "elts") (<- ctx "ctx"))
     | "List" => return (.list (<- exprs "elts") (<- ctx "ctx"))
-    | "Subscript" => return (.subscript (<- expr "value") (<- exprs "slice") (<- ctx "ctx"))
+    | "Subscript" => return (.subscript (<- expr "value") (<- expr "slice") (<- ctx "ctx"))
     | "Slice" => return (.slice (<- expr? "lower") (<- expr? "upper") (<- expr? "step"))
-    | "BoolOp" => return (.boolOp (<- str "op") (<- exprs "values"))
-    | "BinOp" => return (.binOp (<- str "op") (<- expr "left") (<- expr "right"))
-    | "UnaryOp" => return (.unaryOp (<- str "op") (<- expr "operand"))
-    | "Compare" => return (.compare (<- expr "left") (<- strs "ops") (<- exprs "comparators"))
+    | "BoolOp" => return (.boolOp (<- boolOp "op") (<- exprs "values"))
+    | "BinOp" => return (.binOp (<- binOp "op") (<- expr "left") (<- expr "right"))
+    | "UnaryOp" => return (.unaryOp (<- unaryOp "op") (<- expr "operand"))
+    | "Compare" => return (.compare (<- expr "left") (<- cmpOps "ops") (<- exprs "comparators"))
     | "IfExp" => return (.ifExp (<- expr "test") (<- expr "body") (<- expr "orelse"))
     | "Call" => return (.call (<- expr "func") (<- exprs "args") (<- keywords "keywords"))
     | _ => throw s!"unsupported python construct {key}"
@@ -288,7 +358,7 @@ partial def stmt (j : Json) : Parser Stmt :=
   withPos stmt' Stmt.stmtPos j
 where
   stmt' (key : String) (j : Json) : Parser Stmt' := do
-    let str := field str j
+    let binOp := field binOp j
     let exprs := field (list expr) j
     let expr? := field (opt expr) j
     let expr := field expr j
@@ -299,7 +369,7 @@ where
     | "Assert" => return (.assert (<- expr "test"))
     | "Return" => return (.ret (<- expr "value"))
     | "Assign" => return (.assign (<- exprs "targets") (<- expr "value"))
-    | "AugAssign" => return (.augAssign (<- expr "target") (<- str "op") (<- expr "value"))
+    | "AugAssign" => return (.augAssign (<- expr "target") (<- binOp "op") (<- expr "value"))
     | "AnnAssign" => return (.annAssign (<- expr "target") (<- expr "annotation") (<- expr? "value"))
     | "For" => return (.forLoop (<- expr "target") (<- expr "iter") (<- stmts "body") (<- stmts "orelse"))
     | "If" => return (.ifStm (<- expr "test") (<- stmts "body") (<- stmts "orelse"))

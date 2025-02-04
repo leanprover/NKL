@@ -20,18 +20,38 @@ abbrev GlobalAttr  := String -> TraceM Term
 abbrev BuiltinFn := List Expr -> List (String × Expr) -> Err Term
 abbrev GlobalFn  := List Term -> List (String × Term) -> TraceM Term
 
-def noattrs [Monad m] [MonadExcept String m] : Name -> String -> m a :=
+def noAttr [Monad m] [MonadExcept String m] : Name -> String -> m a :=
   fun name attr => throw s!"{attr} is not an attribute of {name}"
+
+def noAccess [Monad m] [MonadExcept String m] : Name -> a -> m b :=
+  fun name _ => throw s!"{name} does not support subscript"
+
+def noIndex [Monad m] [MonadExcept String m] : Name -> a -> b -> m c :=
+  fun name _ _ => throw s!"{name} cannot be used as an index"
+
+def noBinop [Monad m] [MonadExcept String m] : Name -> a -> BinOp -> b -> m c :=
+  fun name _ op _ => throw s!"{name} does not support operator {repr op}"
 
 def uncallable [Monad m] [MonadExcept String m] : Name -> a -> b -> m c :=
   fun name _ _ => throw s!"{name} is not a callable type"
+
+-- Note, this is more strict that python
+def noKWArgs [Monad m] [MonadExcept String m]
+              (f : List a -> m b) : (List a -> List c -> m b) :=
+  fun args kwargs =>
+    if kwargs.length > 0 then
+      throw "invalid arguments (no kwargs supported)"
+    else f args
 
 -- Create a built-in representing a function; no attributes supported.
 
 def simple_function (name : Name) (f : BuiltinFn) : Object :=
   { name := name
-  , type := .any name
-  , attr := noattrs name
+  , type := .obj name  -- TODO: use a function type
+  , attr := noAttr name
+  , access := noAccess name
+  , index := noIndex name
+  , binop := noBinop name
   , call := f
   }
 
@@ -39,8 +59,11 @@ def simple_function (name : Name) (f : BuiltinFn) : Object :=
 
 def python_function (name : Name) (f : BuiltinFn) : Object :=
   { name := name
-  , type := .any name
+  , type := .obj name  -- TODO: use a function type
   , attr := attrs
+  , access := noAccess name
+  , index := noIndex name
+  , binop := noBinop name
   , call := f
   }
 where
@@ -58,6 +81,9 @@ def simple_object {a : Type}
   { name := name
   , type := .none
   , attr := attr_fn
+  , access := noAccess name
+  , index := noIndex name
+  , binop := noBinop name
   , call := uncallable name
   }
 where
@@ -89,10 +115,31 @@ where
 def tuple_class : Global :=
   let name := "class_tuple".toName
   { name := name
-  , attr := noattrs name
+  , attr := noAttr name
   , call := make_tuple
   }
 where
   make_tuple : GlobalFn
   | args, [] => return .object (tuple_obj args)
   | _, _ => throw "invalid arguments"
+
+-- A convenience class for building Objects
+
+class Obj (a : Type) where
+  name : Name
+  type : TermType := .obj name
+  attr : a -> String -> Err Term := fun _ => noAttr name
+  access : a -> List Index -> Err Term := fun _ => noAccess name
+  index : a -> TermType -> Nat -> Err Index := fun _ => noIndex name
+  binop : a -> Bool -> BinOp -> Expr -> Err Term := fun _ => noBinop name
+  call : a -> List Expr -> List (String × Expr) -> Err Term := fun _ => uncallable name
+
+def toObject [inst: Obj a] (x : a) : Object :=
+  { name := inst.name
+  , type := inst.type
+  , attr := inst.attr x
+  , access := inst.access x
+  , index := inst.index x
+  , binop := inst.binop x
+  , call := inst.call x
+  }

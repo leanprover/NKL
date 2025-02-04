@@ -17,18 +17,20 @@ open NKL.KLR
 private def tensor_call (op : String) (args : List Expr) : Term :=
   let type := if let .tensor t :: _ := args
               then TermType.tensor t.dtype t.shape
-              else TermType.any "?".toName
+              else TermType.obj "object".toName
   let name := Expr.var ("tensor_".append op)
   .expr (.call name args []) type
 
 -- Unary operations on tensors
 
-def tensor_op (op : String) (t : TensorName) : TraceM Term :=
+def tensor_op (op : UnaryOp) (t : TensorName) : TraceM Term :=
+  let op := toString (repr op)
   return tensor_call op [.tensor t]
 
 -- Binary operations on tensors / scalars
 
-def tensor_tensor (op : String) (l r : TensorName) : TraceM Term :=
+def tensor_tensor (op : BinOp) (l r : TensorName) : TraceM Term :=
+  let op := toString (repr op)
   return tensor_call op [.tensor l, .tensor r]
 
 private def broadcast (t : TensorName) (c : Const) : Expr :=
@@ -36,8 +38,10 @@ private def broadcast (t : TensorName) (c : Const) : Expr :=
   let args := .const c :: args
   .call (.var "broadcast") args []
 
-def tensor_scalar (op : String) (t : TensorName) (c : Const) : TraceM Term :=
+def tensor_scalar (op : BinOp) (t : TensorName) (c : Const) : TraceM Term :=
+  let op := toString (repr op)
   return tensor_call op [ .tensor t, broadcast t c]
 
-def scalar_tensor (op : String) (c : Const) (t : TensorName) : TraceM Term :=
+def scalar_tensor (op : BinOp) (c : Const) (t : TensorName) : TraceM Term :=
+  let op := toString (repr op)
   return tensor_call op [ .tensor t, broadcast t c]

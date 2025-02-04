@@ -66,43 +66,80 @@ open NKL.KLR
 export Lean (Name)
 deriving instance Ord for Name
 
--- Terms are an extension of KLR.Expr, and they have types, which may be `any`.
--- TODO: can we get rid of any?
+-- Bring in the operator types for convenience
+export Python (BoolOp CmpOp UnaryOp BinOp)
 
+/-
+Terms are an extension of KLR.Expr, and they have types, which are an
+extension of the KLR types. Notably, a Term can have type `obj Name`, which
+represents an object type (a.k.a. a "nominal type").
+Note: the implementation is currently abusing this type by using it for
+functions. While this is not "incorrect," from the perspective of Python,
+the goal is to eventually give all functions function types, and this
+will happen once type inference is integrated.
+-/
 inductive TermType where
   | none | bool | int | float | string
-  | any    : Name -> TermType
+  | obj    : Name -> TermType
   | tuple  : List TermType -> TermType
   | list   : List TermType -> TermType
   | tensor : Dtype -> Shape -> TermType
   deriving Repr, BEq
 
 mutual
--- In python everything is an object, so we use the term "object" to refer to
--- all built-ins, be they objects, functions, constants, etc.
+/-
+In python everything is an object, so we use the term "object" to refer to
+all built-ins, be they objects, functions, constants, etc.
+Each object has a name and a type, and may support up to four operations:
+  - attr: attribute projection, e.g. obj.foo
+  - access: subscript access, e.g. obj[1,2,3] or obj[1:2]
+  - index: conversion to a tensor index, e.g. t[obj]
+  - binop: apply binary operator, e.g. obj + 1
+  - call: function call, e.g. f(a,b,k=1)
+-/
 structure Object where
-  name : Name
-  type : TermType
-  attr : String -> Err Term
-  call : List Expr -> List (String × Expr) -> Err Term
+  name   : Name
+  type   : TermType := .obj name
+  attr   : String -> Err Term
+  access : List Index -> Err Term
+  index  : TermType -> Nat -> Err Index
+  binop  : Bool -> BinOp -> Expr -> Err Term
+  call   : List Expr -> List (String × Expr) -> Err Term
 
+/-
+A term contains KLR expressions plus things that may exists at trace time.
+Tuples and lists are only valid during tracing. The ellipsis may be translated
+to a set of tensor indexes, or to a pass statement depending on context.
+A slice is only valid in a tensor access context in KLR, but may also be
+used with a list at trace time, or may float around as a term for a while
+before it finds a home in a KLR term.
+TODO: KLR expressions should have KLR types, not TermTypes
+-/
 inductive Term where
-  | object : Object -> Term
-  | tuple  : List Term -> Term
-  | list   : List Term -> Term
-  | expr   : Expr -> TermType -> Term
+  | object   : Object -> Term
+  | tuple    : List Term -> Term
+  | list     : List Term -> Term
+  | ellipsis : Term
+  | slice    : Option Int -> Option Int -> Option Int -> Term
+  | expr     : Expr -> TermType -> Term
 end
 
-instance : Repr Term where
-  reprPrec b n := match b with
-    | .object obj => .text s!"object<{obj.name}>"
-    | .tuple l => .text s!"tuple<{l.length}>"
-    | .list l => .text s!"list<{l.length}>"
-    | .expr e ty  => reprPrec e n ++ ":" ++ reprPrec ty n
+def Term.format : Term -> Lean.Format
+  | .object obj => .text s!"object<{obj.name}>"
+  | .tuple l => .text s!"tuple<{l.length}>"
+  | .list l => .text s!"list<{l.length}>"
+  | .ellipsis => .text "ellipsis"
+  | .slice a b c => .text s!"slice({a},{b},{c})"
+  | .expr e ty  => repr e ++ ":" ++ repr ty
+
+instance : Repr Term where reprPrec b _ := b.format
 
 def Term.beq : Term -> Term -> Bool
+  | .object l, .object r => l.name == r.name
   | .tuple l , .tuple r
   | .list l  , .list r   => lst_eq l r
+  | .ellipsis, .ellipsis => true
+  | .slice a b c, .slice x y z => a == x && b == y && c == z
   | .expr l _, .expr r _ => l == r
   | _, _ => false
 where
@@ -113,17 +150,25 @@ where
 
 instance : BEq Term where beq := Term.beq
 
-def Term.type : Term -> Err TermType
-  | .object obj => return obj.type
-  | .tuple l    => return .tuple (<- Term.type ▷ l)
-  | .list l     => return .tuple (<- Term.type ▷ l)
-  | .expr _ ty  => return ty
+def Term.type : Term -> TermType
+  | .object obj  => obj.type
+  | .tuple l     => .tuple (types l)
+  | .list l      => .list (types l)
+  | .ellipsis    => .obj "ellipsis".toName
+  | .slice _ _ _ => .obj "slice".toName
+  | .expr _ ty   => ty
+where
+  types : List Term -> List TermType
+  | [] => []
+  | x :: xs => type x :: types xs
 
 def Term.toKLR : Term -> Err KLR.Expr
-  | .object obj => return .var obj.name.toString
-  | .tuple _    => throw "tuple cannot be converted to a KLR term"
-  | .list _     => throw "list cannot be converted to a KLR term"
-  | .expr e _   => return e
+  | .object obj  => return .var obj.name.toString
+  | .tuple _     => throw "tuple cannot be converted to a KLR term"
+  | .list _      => throw "list cannot be converted to a KLR term"
+  | .ellipsis    => throw "ellipsis cannot be converted to a KLR term"
+  | .slice _ _ _ => throw "slice cannot be converted to KLR in this context"
+  | .expr e _    => return e
 
 -- Our state has a number for generating fresh names, the current source
 -- location (for error reporting), and the local environment. The global
@@ -212,6 +257,7 @@ s with `Collection (s -> (s,a))`. This is essentially Russell's paradox.
 -/
 structure Global where
   name : Name
+  type : TermType := .obj name
   attr : String -> TraceM Term
   call : List Term -> List (String × Term) -> TraceM Term
 
@@ -221,15 +267,15 @@ inductive Item where
   | source : Python.Fun -> Item
   | term   : Term -> Item
 
-def Item.type : Item -> Err TermType
-  | .module n => return .any n
-  | .global g => return .any g.name
-  | .source _ => return .any "source".toName
+def Item.type : Item -> TermType
+  | .module n => .obj n
+  | .global g => g.type
+  | .source _ => .obj "source".toName
   | .term   t => t.type
 
 def Item.toTerm : Item -> Err Term
-  | .module n   => return .expr (.var n.toString) (.any "?".toName)
-  | .global g   => return .expr (.var g.name.toString) (.any "?".toName)
+  | .module n   => return .expr (.var n.toString) (.obj n)
+  | .global g   => return .expr (.var g.name.toString) g.type
   | .source _   => throw "invalid use of source function"
   | .term t     => return t
 

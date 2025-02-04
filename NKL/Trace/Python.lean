@@ -12,13 +12,13 @@ import NKL.Trace.Basic
 namespace NKL.Trace
 open NKL.Python
 
-def const : Const -> Err Term
-  | .none     => return .expr (.const $ .none)     .none
-  | .bool b   => return .expr (.const $ .bool b)   .bool
-  | .int i    => return .expr (.const $ .int i)    .int
-  | .float f  => return .expr (.const $ .float f)  .float
-  | .string s => return .expr (.const $ .string s) .string
-  | .ellipsis => throw "unsupported use of ellipsis"
+def const : Const -> Term
+  | .none     => .expr (.const $ .none)     .none
+  | .bool b   => .expr (.const $ .bool b)   .bool
+  | .int i    => .expr (.const $ .int i)    .int
+  | .float f  => .expr (.const $ .float f)  .float
+  | .string s => .expr (.const $ .string s) .string
+  | .ellipsis => .ellipsis
 
 /-
 # Evaluating index expressions
@@ -39,51 +39,58 @@ then the None is interpreted as an integer and not as a new axis. If you write,
   t[(1:2) + 3]
   t[... * 8]
 
-these are syntax errors in python.
+these are syntax errors in python. Note, we do not support nested tuples or
+lists as indexes e.g. t[1,(2,3),4] is disallowed
 -/
 
-mutual
--- top-level index expressions: None (a.k.a. np.newaxis) or IndexExpr
-def indexExpr? : Option Expr -> Tracer (Option KLR.IndexExpr)
-  | none   => return none
-  | some (.exprPos (.const .none) _) => return none
-  | some e => indexExpr e
+-- Convert an Expr to an Index (if possible)
+def exprToIndex : KLR.Expr -> Err KLR.Index
+  | .var x => return .coord (some $ .var x)
+  | .const .none => return .coord none
+  | .const c => return .coord (some $ .int (<- c.toInt))
+  | .tensor _ => throw "tensor indirect indexing unsupported"
+  | .access _ _ => throw "invalid index"
+  | .call _ _ _ => throw "invalid index"
 
--- general sub-expressions
-def indexExpr : Expr -> Tracer KLR.IndexExpr
-  | .exprPos e' p => withPos p (indexExpr' e')
-
-def indexExpr' : Expr' -> Tracer KLR.IndexExpr
-  | .const (.int i) => return .int i
-  | .name id _      => return .var id
-  | .binOp op l r   => return <- indexBinOp op (<- indexExpr l) (<- indexExpr r)
-  | .unaryOp op e   => return <- indexUnOp op (<- indexExpr e)
-  | _ => throw "invalid index expression"
-
--- top-level index: slice, ellipsis, or indexExpr?
--- TODO: get rid of ...
-def index : Expr -> Tracer KLR.Index
-  | .exprPos (.const .ellipsis) _ => return .ellipsis
-  | .exprPos (.slice l u s) p => withPos p do
-      return (.slice (<- indexExpr? l) (<- indexExpr? u) (<- indexExpr? s))
-  | e => return (.coord (<- indexExpr? e))
-end
+-- Convert a Term to an Index (if possible)
+def termToIndex (ty : TermType) : Term -> Err (List KLR.Index)
+  | .tuple l | .list l => l.enum.mapM fun (p,t) => toIndex p t
+  | t => return [<- toIndex 0 t]
+where
+  toIndex (pos : Nat) : Term -> Err KLR.Index
+  | .tuple _ | .list  _ => throw "nested tuple/list indexes not supported"
+  | .object o => o.index ty pos
+  | .ellipsis => return .ellipsis
+  | .slice x y z => return .slice (x.map .int) (y.map .int) (z.map .int)
+  | .expr e _ => exprToIndex e
 
 -- Note, a list index can be negative, which means index from end of list.
-def list_access (l : List Term) : List KLR.Index -> TraceM Term
-  | [.coord (some (.int i))] => do
+-- Python also allows l[True] and l[False]
+-- TODO: add case for slice
+def list_access (name : String) (l : List Term) : Term -> Err Term
+  | .expr (.const (.bool false)) _ => do
+      if h:l.length > 0 then return l.get (Fin.mk 0 h)
+      else throw "index out of bounds"
+  | .expr (.const (.bool true)) _ => do
+      if h:l.length > 1 then return l.get (Fin.mk 1 h)
+      else throw "index out of bounds"
+  | .expr (.const (.int i)) _ => do
       let i := if i < 0 then l.length + i else i
       if i < 0 then throw "index out of bounds"
       let n := i.toNat
       if h:l.length > n then return l.get (Fin.mk n h)
       else throw "index out of bounds"
-  |_ => throw "unsupported __subscript__"
+  |_ => throw s!"{name} indicies must be integers of slices"
 
-def access : Term -> List KLR.Index -> TraceM Term
-  | .object _, _  => throw "builtin object __subscript__ not supported"
-  | .tuple l, ix
-  | .list l, ix   => list_access l ix
-  | .expr e _, ix => return .expr (.access e ix) (.any "?".toName)
+-- Top-level subscript access t[i]
+def access (t : Term) (i : Term) : Err Term := do
+  match t with
+  | .object o => o.access (<- termToIndex t.type i)
+  | .tuple l => list_access "list" l i
+  | .list l => list_access "tuple" l i
+  | .ellipsis
+  | .slice _ _ _ => throw "__subscript__ not supported"
+  | .expr e _ => return .expr (.access e (<- termToIndex t.type i)) (.obj "object".toName)
 
 /-
 # Handling of assignment statements
@@ -136,7 +143,7 @@ def LValue : Expr -> Tracer Term
   | .exprPos e' p => withPos p (lval e')
 where
   lval : Expr' -> Tracer Term
-  | .name id .store => return .expr (.var id) (.any "?".toName)
+  | .name id .store => return .expr (.var id) (.obj "object".toName)
   | .tuple l .store => return .tuple (<- LValue ▷ l)
   | .list  l .store => return .list  (<- LValue ▷ l)
   | _ => throw "cannot assign to expression"
@@ -147,6 +154,8 @@ def RValue : Term -> Tracer Term
   | .object o => return .object o
   | .tuple  l => return .tuple (<- RValue ▷ l)
   | .list   l => return .list  (<- RValue ▷ l)
+  | .ellipsis => return .ellipsis
+  | .slice a b c => return .slice a b c
   | .expr e@(.call _ _ _) ty => do
        let v := (<- genName).toString
        add_stmt (.assign v e)
@@ -162,9 +171,8 @@ def assignExpr (e : KLR.Expr) (t : Term) : Tracer Unit := do
 
 -- Unpack an RValue, must be a list or tuple
 def unpack : Term -> Tracer (List Term)
-  | .object o => throw s!"cannot unpack non-iterable object {o.name}"
-  | .expr _ t => throw s!"cannot unpack non-iterable object {repr t}"
   | .tuple l | .list  l => return l
+  | t => throw s!"cannot unpack non-iterable object {repr t}"
 
 -- Assign to a term, handling unpacking for tuples and lists
 def assignTerm (x : Term) (e : Term) : Tracer Unit := do
@@ -172,6 +180,8 @@ def assignTerm (x : Term) (e : Term) : Tracer Unit := do
   | .object o => throw s!"cannot assign to {o.name}"
   | .tuple l
   | .list  l  => assignList l (<- unpack e)
+  | .ellipsis => throw "cannot assign to ellipsis"
+  | .slice _ _ _ => throw "cannot assign to slice"
   | .expr x _ => assignExpr x e
 where
   assignList : List Term -> List Term -> Tracer Unit
@@ -211,8 +221,17 @@ partial def integer (e : Expr) : Tracer Int := do
   | .const c => return (<- c.toInt)
   | _ => throw "expecting integer"
 
+-- Note, this is technically more permissive than python in some contexts (slices)
+partial def integer? : Option Expr -> Tracer (Option Int)
+  | none => return none
+  | some e => do
+    match <- klr e with
+    | .const .none => return none
+    | .const c => return some (<- c.toInt)
+    | _ => throw "expecting integer or None"
+
 partial def expr' : Expr' -> Tracer Item
-  | .const c => return .term (<- const c)
+  | .const c => return .term (const c)
   | .tensor s dty => do
       let shape <- integer ▷ s
       let name <- genName "t".toName
@@ -221,9 +240,8 @@ partial def expr' : Expr' -> Tracer Item
   | .attr (.exprPos e p) id _ => do withPos p ((<- expr' e).attr id)
   | .tuple l _ => return .term (.tuple (<- term ▷ l))
   | .list  l _ => return .term (.list  (<- term ▷ l))
-  | .subscript t [ .exprPos (.tuple ix _) _ ] _
-  | .subscript t ix _ => return .term (<- access (<- term t) (<- index ▷ ix))
-  | .slice _ _ _ => throw "syntax error"
+  | .subscript t i _ => return .term (<- access (<- term t) (<- term i))
+  | .slice x y z => return .term (.slice (<- integer? x) (<- integer? y) (<- integer? z))
   | .boolOp op xs => return .term (<- boolOp op (<- term ▷ xs))
   | .binOp op l r => return .term (<- binOp op (<- term l) (<- term r))
   | .unaryOp op e => return .term (<- unOp op (<- term e))
