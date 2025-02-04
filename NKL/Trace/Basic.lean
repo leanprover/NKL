@@ -65,32 +65,33 @@ def indexUnOp : String -> KLR.IndexExpr -> Err KLR.IndexExpr
 
 -- Truthiness of Terms following Python
 
-def Term.isTrue : Term -> TraceM Bool
+def Term.isTrue : Term -> Err Bool
   | .object _ => return true
   | .tuple [] => return false
   | .tuple _  => return true
   | .list []  => return false
   | .list _   => return true
+  | .ellipsis => return true
+  | .slice _ _ _ => return true
   | .expr (.const c) _ => return c.isTrue
-  | .expr _          _ => throw "non-constant expression"
+  | .expr _ _ => throw "non-constant expression"
 
-def Term.isFalse (t : Term) : TraceM Bool :=
+def Term.isFalse (t : Term) : Err Bool :=
   return not (<- t.isTrue)
 
 -- Following Python semantics, boolean operators return
 -- the first value that is convertible to True or False
 
-def boolOp (op : String) (es : List Term) : TraceM Term := do
+def boolOp (op : BoolOp) (es : List Term) : Err Term := do
   bop (<- bopFn op) es
 where
-  bop fn : List Term -> TraceM Term
+  bop fn : List Term -> Err Term
     | []  => throw "invalid expression"
     | [x] => return x
     | x :: xs => do if (<- fn x) then return x else bop fn xs
-  bopFn : String -> TraceM (Term -> TraceM Bool)
-    | "Or"  => return Term.isTrue
-    | "And" => return Term.isFalse
-    | s     => throw s!"unsupported boolean operator {s}"
+  bopFn : BoolOp -> Err (Term -> Err Bool)
+    | .or  => return Term.isTrue
+    | .and => return Term.isFalse
 
 -- Binary Operators
 
@@ -103,24 +104,24 @@ where
 --   [1,2] * True  => [1,2]
 --   [1,2] * False => []
 
-private def mulseq (l : List a) : Const -> TraceM (List a)
+private def mulseq (l : List a) : Const -> Err (List a)
   | .bool false => return []
   | .bool true  => return l
   | .int i      => return List.flatten $ List.replicate i.toNat l
   | _           => throw "invalid multiply"
 
 -- Binary operators on constants
-private def constOp : String -> Const -> Const -> TraceM Term
-  | "Add",  .int l, .int r => return int (l + r)
-  | "Sub",  .int l, .int r => return int (l - r)
-  | "Mult", .int l, .int r => return int (l * r)
-  | "Div",  .int l, .int r => return int (l / r)
+private def constOp : BinOp -> Const -> Const -> Err Term
+  | .add, .int l, .int r => return int (l + r)
+  | .sub, .int l, .int r => return int (l - r)
+  | .mul, .int l, .int r => return int (l * r)
+  | .div, .int l, .int r => return int (l / r)
   | _,_,_ => throw "unimp"
 where
   int (i : Int) : Term := .expr (.const (.int i)) .int
 
 -- Binary operators on tensors (see Tensor.lean)
-private def exprOp : String -> Expr -> Expr -> TraceM Term
+private def exprOp : BinOp -> Expr -> Expr -> TraceM Term
   -- tensors
   | op, .tensor l, .tensor r => tensor_tensor op l r
   | op, .tensor t, .const  c => tensor_scalar op t c
@@ -132,22 +133,26 @@ private def exprOp : String -> Expr -> Expr -> TraceM Term
   | _ , _        , _         => throw "non-constant expression"
 
 -- Binary operators on terms
-def binOp : String -> Term -> Term -> TraceM Term
+def binOp : BinOp -> Term -> Term -> TraceM Term
+  -- objects
+  | op, .object l, .expr r _ => l.binop true op r
+  | op, .expr l _, .object r => r.binop false op l
   -- lists and tuples
-  | "Add",  .list   l,          .list   r => return .list (l ++ r)
-  | "Add",  .tuple  l,          .tuple  r => return .tuple (l ++ r)
-  | "Mult", .list   l,          .expr (.const  c) _
-  | "Mult", .expr (.const c) _, .list l   => return .list (<- mulseq l c)
-  | "Mult", .tuple  l,          .expr (.const  c) _
-  | "Mult", .expr (.const c) _, .tuple l  => return .tuple (<- mulseq l c)
-  | op   ,  .expr l _,          .expr r _ => exprOp op l r
+  | .add, .list   l,          .list   r => return .list (l ++ r)
+  | .add, .tuple  l,          .tuple  r => return .tuple (l ++ r)
+  | .mul, .list   l,          .expr (.const  c) _
+  | .mul, .expr (.const c) _, .list l   => return .list (<- mulseq l c)
+  | .mul, .tuple  l,          .expr (.const  c) _
+  | .mul, .expr (.const c) _, .tuple l  => return .tuple (<- mulseq l c)
+  -- expressions
+  | op, .expr l _, .expr r _ => exprOp op l r
   | _, _, _ => throw "unsupported operator"
 
 -- Unary operators
-def unOp : String -> Term -> TraceM Term
-  | op   , .expr (.tensor t) _ => tensor_op op t
-  | "Not", t                   => return .expr (.const $ .bool (<- t.isFalse)) .bool
-  | op, _ => throw s!"unimp {op}"
+def unOp : UnaryOp -> Term -> TraceM Term
+  | op, .expr (.tensor t) _ => tensor_op op t
+  | .not, t => return .expr (.const $ .bool (<- t.isFalse)) .bool
+  | _, _ => throw "unsupported operator"
 
 /-
 Comparison operators
@@ -178,10 +183,7 @@ private partial def termEq : Term -> Term -> TraceM Bool
   | .list  l₁, .list  l₂ => do
       if l₁.length != l₂.length then
         return false
-      for (x,y) in (l₁.zip l₂) do
-        if not (<- termEq x y) then
-          return false
-      return true
+      (l₁.zip l₂).allM termEq.uncurry
   | .expr e₁ _, .expr e₂ _ => exprEq e₁ e₂
   | _, _ => return false
 
@@ -227,22 +229,21 @@ where
       if <- termLt x y then return true
       else return (<- termEq x y) && (<- listLt xs ys)
 
-def cmpOp : String -> Term -> Term -> TraceM Bool
-  | "Eq", l, r => termEq l r
-  | "NotEq", l, r => return not (<- termEq l r)
-  | "Lt", l, r => termLt l r
-  | "LtE", l, r => return (<- termEq l r) || (<- termLt l r)
-  | "Gt", l, r => return not (<- termEq l r) && not (<- termLt l r)
-  | "GtE", l, r => return not (<- termLt l r)
-  | "Is", l, r => termIsIdentical l r
-  | "IsNot", l, r => return not (<- termIsIdentical l r)
-  | "In", l, r => termIn l r
-  | "NotIn", l, r => return not (<- termIn l r)
-  | op, _, _ => throw s!"unsupported comparison operator {op}"
+def cmpOp : CmpOp -> Term -> Term -> TraceM Bool
+  | .eq, l, r => termEq l r
+  | .ne, l, r => return not (<- termEq l r)
+  | .lt, l, r => termLt l r
+  | .le, l, r => return (<- termEq l r) || (<- termLt l r)
+  | .gt, l, r => return not (<- termEq l r) && not (<- termLt l r)
+  | .ge, l, r => return not (<- termLt l r)
+  | .is, l, r => termIsIdentical l r
+  | .isNot, l, r => return not (<- termIsIdentical l r)
+  | .isIn, l, r => termIn l r
+  | .notIn, l, r => return not (<- termIn l r)
 
 -- Python comparison chains are short-circuting
 -- e.g. x < y < z  => x < y || y < z
-def compare : Term -> List String -> List Term -> TraceM Term
+def compare : Term -> List CmpOp -> List Term -> TraceM Term
   | x, [op], [y] => return bool (<- cmpOp op x y)
   | x, op::ops, y::ys => do
      if (<- cmpOp op x y)
@@ -274,7 +275,9 @@ def Term.call (f : Term)
               (args : List Expr)
               (kws : List (String × Expr)) : TraceM Term := do
   match f with
-  | .object o => o.call args kws
-  | .tuple _  => throw "tuple is not a callable type"
-  | .list _   => throw "list is not a callable type"
-  | .expr f _ => return .expr (.call f args kws) (.any "?".toName)
+  | .object o    => o.call args kws
+  | .tuple _     => throw "tuple is not a callable type"
+  | .list _      => throw "list is not a callable type"
+  | .ellipsis    => throw "ellipsis is not a callable type"
+  | .slice _ _ _ => throw "slice is not a callable type"
+  | .expr f _    => return .expr (.call f args kws) (.obj "object".toName)
