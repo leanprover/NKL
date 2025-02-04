@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e -u -o pipefail
+trap "kill 0" SIGINT SIGTERM
+
+ROOT=$(dirname $(dirname $(readlink -f $0)))
+WHEEL_DIR=$ROOT/.wheel/klr
+rm -rf $WHEEL_DIR
+mkdir -p $WHEEL_DIR/klr/bin
+lake build
+cp $ROOT/.lake/build/bin/klr $WHEEL_DIR/klr/bin/klr
+cp -R $ROOT/interop/nki $WHEEL_DIR/klr/nki
+cp -R $ROOT/interop/klr $WHEEL_DIR/klr/klr
+cp $ROOT/LICENSE $WHEEL_DIR
+cp $ROOT/interop/README.md $WHEEL_DIR
+cp $ROOT/interop/pyproject.toml $WHEEL_DIR
+cp $ROOT/interop/MANIFEST.in $WHEEL_DIR
+
+cd $WHEEL_DIR
+python -m build
+
+# To upload the wheel, with the proper token in ~/.pypirc, run
+#
+#     python3 -m twine upload --verbose --repository testpypi dist/*
+#
+# from .wheel/klr
