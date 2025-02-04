@@ -7,8 +7,8 @@ import inspect
 import json
 import numpy as np
 import os
+import pathlib
 import subprocess
-import sys
 import tempfile
 import types
 
@@ -18,15 +18,14 @@ from importlib.resources import files
 
 
 def run_klr(infile, outfile):
+  # For development, pick up the klr binary from the project dir
   project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
   bin = project_root + '/bin/klr'
-  if os.path.exists(bin):
-    subprocess.run(bin + ' parse-json ' + infile.name, stdout=outfile, shell=True, check=False)
-  else:
-    # This mess needs to be figured out once we have a proper wheel
-    # binary_path = files('klr') # using importlib.files
-    print("Can't find klr exe")
-    sys.exit(1)
+  if not os.path.isfile(bin):
+    # For regular pip users, pick up the klr from the wheel. While the type of `bin` here is
+    # PosixPath rather than string, they both work as the first argument to subprocess.run
+    bin = files('klr').joinpath('bin/klr')
+  subprocess.run([bin, 'parse-json', infile.name], stdout=outfile, check=True)
 
 
 # This is a custom JSON encoder for use with AST nodes.
@@ -129,23 +128,29 @@ class Parser(ast.NodeVisitor):
     self.kwargs = d
 
   def __call__(self, *args, **kwargs):
-    self.apply_args(*args, **kwargs)
-    json_kernel = self.json()
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
-      temp_file.write(json_kernel)
-      temp_file.flush()
-      temp_filename = temp_file.name
-      klr_filename = temp_filename + ".klr"
-      with open(klr_filename, 'w') as klr_file:
-        dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        run_klr(temp_file, klr_file)
-        with open(klr_filename, 'r') as file:
-          klr = file.read()
-          # This isn't great, but when the Lean exe discovers an error, e.g. an undefined
-          # variable, it just returns an empty string. We'll fix this.
-          if klr == '':
-            raise Exception("tracing failed")
-          return klr
+    klr_filename = None
+    try:
+      self.apply_args(*args, **kwargs)
+      json_kernel = self.json()
+      # temp_file will be deleted
+      with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
+        temp_file.write(json_kernel)
+        temp_file.flush()
+        temp_filename = temp_file.name
+        # klr_filename needs to be deleted after running klr
+        klr_filename = temp_filename + ".klr"
+        with open(klr_filename, 'w') as klr_file:
+          run_klr(temp_file, klr_file)
+          with open(klr_filename, 'r') as file:
+            klr = file.read()
+            # This isn't great, but when the Lean exe discovers an error, e.g. an undefined
+            # variable, it just returns an empty string. We'll fix this.
+            if klr == '':
+              raise Exception("tracing failed")
+            return klr
+    finally:
+      if os.path.exists(klr_filename):
+        os.remove(klr_filename)
 
   def ref_global(self, refname, val):
     return self.reference(self.globals, refname, val)

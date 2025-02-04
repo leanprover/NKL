@@ -1,0 +1,17 @@
+[project]
+name = "klr"
+version = "0.0.2"
+description = "Intermediate langauge for tensor compilers"
+authors = [
+  {name = "Paul Govereau", email = "govereau@amazon.com"},
+  {name = "Sean McLaughlin", email = "seanmcl@amazon.com"},
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+keywords = ["trainium", "tpu", "pallas", "triton", "gpu"]
+dependencies = [
+  "numpy",
+]
+
+[project.urls]
+Repository = "https://github.com/leanprover/KLR"
