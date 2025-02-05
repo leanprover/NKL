@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Paul Govereau
+Authors: Paul Govereau, Sean McLaughlin
 -/
 import Lean
 import KLR.Core
@@ -278,7 +278,7 @@ partial def stmt' : Stmt' -> Tracer Unit
       stmt' (.assign [x] (.exprPos (.binOp op x e) (<- getPos)))
   | .annAssign _ _ .none => return ()
   | .annAssign x _ (.some e) => stmt' (.assign [x] e)
-  | _s => throw "not yet implemented" --s!"unimp {repr s}"
+  | _s => throw "not yet implemented"
 
 -- Bind positional and keyword arguments to a Python function based on its
 -- signature.

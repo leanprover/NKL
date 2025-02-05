@@ -1,27 +1,26 @@
 import KLR
 import Cli
 import KLR.Python
+import KLR.Trace
 open Cli
+
 
 local instance : MonadLift Err IO where
   monadLift
     | .ok x => return x
     | .error s => throw $ .userError s
 
-private def parseJsonString (s : String) : IO Unit := do
-  let kernel <- KLR.Python.Parsing.parse s
-  let stmts <- KLR.Trace.runNKIKernel kernel
-  for s in stmts do
-    IO.println ("  " ++ repr s)
-
-def parseJsonFile (p : Parsed) : IO UInt32 := do
+def parseJson (p : Parsed) : IO UInt32 := do
   let file := p.positionalArg! "file" |>.as! String
   let s <- IO.FS.readFile file
-  let _ <- parseJsonString s
+  let kernel <- KLR.Python.Parsing.parse s
+  let stmts <- KLR.Trace.runNKIKernel kernel
+  let json := Lean.Json.arr (stmts.map Lean.toJson).toArray
+  IO.println json
   return 0
 
 def parseJsonCmd := `[Cli|
-  "parse-json" VIA parseJsonFile;
+  "parse-json" VIA parseJson;
   "Parse KLR kernels as JSON"
 
   ARGS:

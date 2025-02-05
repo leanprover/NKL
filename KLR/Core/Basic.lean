@@ -1,9 +1,9 @@
 /-
 Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Paul Govereau
+Authors: Paul Govereau, Sean McLaughlin
 -/
---import TensorLib.Tensor
+import Lean
 
 /-!
 # Abstract syntax of Core NKL language
@@ -32,7 +32,7 @@ structure TensorName where
   name  : String
   dtype : Dtype
   shape : Shape
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson
 
 -- TODO
 inductive Typ where
@@ -43,7 +43,7 @@ inductive Const where
   | int (value : Int)
   | float (value : Float)
   | string (value : String)
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson
 
 -- This corresponds to the "Quasi-Affine Expressions" in Neuron.
 -- Note, `floor` is the usual integer division.
@@ -56,14 +56,14 @@ inductive IndexExpr where
   | floor (expr : IndexExpr) (scalar : Int)
   | ceil (expr : IndexExpr) (scalar : Int)
   | mod (expr : IndexExpr) (scalar : Int)
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson
 
 -- Note: `np.newindex` is represented as `(.coord none)`
 inductive Index where
   | ellipsis
   | coord (e : Option IndexExpr)
   | slice (l u step : Option IndexExpr)
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson
 
 inductive Expr where
   | var (x : String)
@@ -71,7 +71,7 @@ inductive Expr where
   | tensor (t : TensorName)
   | access (t : Expr) (ix : List Index)
   | call (f : Expr) (args : List Expr) (kwargs : List (String × Expr))
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson
 
 inductive Stmt where
   | pass
@@ -79,4 +79,4 @@ inductive Stmt where
   | ret (v : Expr)
   | assign (x : String) (e : Expr)
   | loop (x : String) (l u step : IndexExpr) (body : List Stmt)
-  deriving Repr, BEq
+  deriving Repr, BEq, Lean.ToJson

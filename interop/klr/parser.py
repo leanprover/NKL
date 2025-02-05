@@ -1,17 +1,33 @@
 # Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # Released under Apache 2.0 license as described in the file LICENSE.
-# Authors: Paul Govereau
+# Authors: Paul Govereau, Sean McLaughlin
 
-import types
-import inspect
 import ast
+import inspect
 import json
 import numpy as np
+import os
+import subprocess
+import sys
+import tempfile
+import types
 
-from textwrap import dedent
-from itertools import chain
 from collections import deque
-from klr.lean_rffi import py_to_lean
+from textwrap import dedent
+from importlib.resources import files
+
+
+def run_klr(infile, outfile):
+  project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  bin = project_root + '/bin/klr'
+  if os.path.exists(bin):
+    subprocess.run(bin + ' parse-json ' + infile.name, stdout=outfile, shell=True, check=False)
+  else:
+    # This mess needs to be figured out once we have a proper wheel
+    # binary_path = files('klr') # using importlib.files
+    print("Can't find klr exe")
+    sys.exit(1)
+
 
 # This is a custom JSON encoder for use with AST nodes.
 # The AST nodes are not handled by the default encoder.
@@ -93,10 +109,6 @@ class Parser(ast.NodeVisitor):
         }
     return json.dumps(d, cls=Enc)
 
-  # TODO: just a placeholder for testing
-  def load(self):
-    py_to_lean(self.json())
-
   def process_args(self, args, kwargs):
     l = []
     d = {}
@@ -118,7 +130,22 @@ class Parser(ast.NodeVisitor):
 
   def __call__(self, *args, **kwargs):
     self.apply_args(*args, **kwargs)
-    py_to_lean(self.json())
+    json_kernel = self.json()
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as temp_file:
+      temp_file.write(json_kernel)
+      temp_file.flush()
+      temp_filename = temp_file.name
+      klr_filename = temp_filename + ".klr"
+      with open(klr_filename, 'w') as klr_file:
+        dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        run_klr(temp_file, klr_file)
+        with open(klr_filename, 'r') as file:
+          klr = file.read()
+          # This isn't great, but when the Lean exe discovers an error, e.g. an undefined
+          # variable, it just returns an empty string. We'll fix this.
+          if klr == '':
+            raise Exception("tracing failed")
+          return klr
 
   def ref_global(self, refname, val):
     return self.reference(self.globals, refname, val)

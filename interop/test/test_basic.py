@@ -129,8 +129,12 @@ def name_not_found():
 
 @pytest.mark.parametrize("f", [
   name_not_found,
-  ])
+])
 def test_fails(f):
   F = Parser(f)
   with pytest.raises(Exception):
     F()
+
+if __name__ == '__main__':
+  F = Parser(name_not_found)
+  print(F())
