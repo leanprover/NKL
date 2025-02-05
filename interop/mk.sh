@@ -25,8 +25,7 @@ PY_CFLAGS=$(python3-config --cflags)
 PY_LDFLAGS=$(python3-config --ldflags)
 PY_LIBS="-lpython${PY_VER}"
 
-clang nkl/lean_rffi.c -dynamiclib -o nkl/lean_rffi${PY_EXT} \
+clang klr/lean_rffi.c -dynamiclib -o klr/lean_rffi${PY_EXT} \
   ${LEAN_CFLAGS} ${PY_CFLAGS} \
   ${LEAN_LDFLAGS} ${LEAN_LIBS} \
   ${PY_LDFLAGS} ${PY_LIBS}
-

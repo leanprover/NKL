@@ -6,7 +6,7 @@ import numpy as np
 import nki
 import pytest
 
-from nkl.parser import Parser
+from klr.parser import Parser
 
 # Success cases
 # (these functions should load and trace to KLR)

@@ -11,7 +11,7 @@ import numpy as np
 from textwrap import dedent
 from itertools import chain
 from collections import deque
-from nkl.lean_rffi import py_to_lean
+from klr.lean_rffi import py_to_lean
 
 # This is a custom JSON encoder for use with AST nodes.
 # The AST nodes are not handled by the default encoder.
@@ -29,7 +29,7 @@ from nkl.lean_rffi import py_to_lean
 # Conveniently, Ellipsis is one of the things
 # that isn't handled, so it is properly mapped.
 
-# See also: NKL/Python.lean for the Lean side
+# See also: KLR/Python.lean for the Lean side
 
 class Enc(json.JSONEncoder):
   def default(self, obj):

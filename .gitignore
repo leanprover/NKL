@@ -1,2 +1,4 @@
 .lake/**
 __pycache__/
+*.so
+*.dSYM

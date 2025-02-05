@@ -1,7 +1,7 @@
 import pytest
 
 from examples import *
-from nkl.parser import Parser
+from klr.parser import Parser
 
 @pytest.mark.parametrize("module,name",
     [ (getting_started, "nki_tensor_add_kernel"),
