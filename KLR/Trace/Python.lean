@@ -4,13 +4,13 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
-import NKL.KLR
-import NKL.Python
-import NKL.Trace.Types
-import NKL.Trace.Basic
+import KLR.Core
+import KLR.Python
+import KLR.Trace.Types
+import KLR.Trace.Basic
 
-namespace NKL.Trace
-open NKL.Python
+namespace KLR.Trace
+open KLR.Python
 
 def const : Const -> Term
   | .none     => .expr (.const $ .none)     .none
@@ -44,7 +44,7 @@ lists as indexes e.g. t[1,(2,3),4] is disallowed
 -/
 
 -- Convert an Expr to an Index (if possible)
-def exprToIndex : KLR.Expr -> Err KLR.Index
+def exprToIndex : Core.Expr -> Err Core.Index
   | .var x => return .coord (some $ .var x)
   | .const .none => return .coord none
   | .const c => return .coord (some $ .int (<- c.toInt))
@@ -53,11 +53,11 @@ def exprToIndex : KLR.Expr -> Err KLR.Index
   | .call _ _ _ => throw "invalid index"
 
 -- Convert a Term to an Index (if possible)
-def termToIndex (ty : TermType) : Term -> Err (List KLR.Index)
+def termToIndex (ty : TermType) : Term -> Err (List Core.Index)
   | .tuple l | .list l => l.enum.mapM fun (p,t) => toIndex p t
   | t => return [<- toIndex 0 t]
 where
-  toIndex (pos : Nat) : Term -> Err KLR.Index
+  toIndex (pos : Nat) : Term -> Err Core.Index
   | .tuple _ | .list  _ => throw "nested tuple/list indexes not supported"
   | .object o => o.index ty pos
   | .ellipsis => return .ellipsis
@@ -162,9 +162,9 @@ def RValue : Term -> Tracer Term
        return .expr (.var v) ty
   | .expr e ty => return .expr e ty
 
--- Create an assignment to a KLR Expr, this must be a variable
+-- Create an assignment to a Core Expr, this must be a variable
 -- TODO: should we support tensors and sub-tensors?
-def assignExpr (e : KLR.Expr) (t : Term) : Tracer Unit := do
+def assignExpr (e : Core.Expr) (t : Term) : Tracer Unit := do
   match e with
   | .var x => extend x.toName t
   | _ => throw s!"cannot assign to {repr e}"
@@ -213,7 +213,7 @@ partial def term (e : Expr) : Tracer Term :=
 partial def term' (e : Expr') : Tracer Term :=
   return <- (<- expr' e).toTerm
 
-partial def klr (e : Expr) : Tracer KLR.Expr :=
+partial def klr (e : Expr) : Tracer Core.Expr :=
   return <- (<- term e).toKLR
 
 partial def integer (e : Expr) : Tracer Int := do
@@ -359,7 +359,7 @@ def traceKernel (k : Kernel) : Tracer Unit := do
       let kwargs <- k.kwargs.mapM fun (x,e) => return (x, <- term' e)
       function_call f args kwargs
 
-def runKernel (k : Kernel) : Err (List KLR.Stmt) :=
+def runKernel (k : Kernel) : Err (List Core.Stmt) :=
   tracer ⟨ ∅, #[] ⟩ do
     traceKernel k
     let g <- get

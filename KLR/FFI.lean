@@ -4,12 +4,12 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
-import NKL.KLR.Pretty
-import NKL.Python
-import NKL.Trace
+import KLR.Core.Pretty
+import KLR.Python
+import KLR.Trace
 
-namespace NKL
-open NKL.KLR
+namespace KLR
+open KLR.Core
 
 local instance : MonadLift Err IO where
   monadLift
@@ -19,6 +19,6 @@ local instance : MonadLift Err IO where
 @[export parse_json]
 def parse_json (s : String) : IO Unit := do
   let kernel <- Python.Parsing.parse s
-  let stmts <- NKL.Trace.runNKIKernel kernel
+  let stmts <- KLR.Trace.runNKIKernel kernel
   for s in stmts do
     IO.println ("  " ++ Lean.format s)

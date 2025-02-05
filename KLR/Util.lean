@@ -6,7 +6,7 @@ Authors: Paul Govereau
 
 -- Common Utilities
 
-namespace NKL
+namespace KLR
 
 /-
 The default choice for an error monad is `Except String`, used for simple

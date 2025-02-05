@@ -3,16 +3,16 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.KLR
-import NKL.Trace.Types
+import KLR.Core
+import KLR.Trace.Types
 
 /-
 # Utilities for creating Builtins and Globals
 
 -/
 
-namespace NKL.Trace
-open NKL.KLR
+namespace KLR.Trace
+open KLR.Core
 
 abbrev BuiltinAttr := String -> Err Term
 abbrev GlobalAttr  := String -> TraceM Term

@@ -3,15 +3,15 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.Util
-import NKL.KLR.Basic
+import KLR.Util
+import KLR.Core.Basic
 
 /-!
 # Serialization and Deserialization
 
 -/
 
-namespace NKL.KLR
+namespace KLR.Core
 
 -- All of the encode function are pure; decoding uses an instance of StM.
 

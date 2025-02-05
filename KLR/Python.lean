@@ -4,7 +4,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
-import NKL.Util
+import KLR.Util
 
 /-!
 # Abstract syntax of Python functions
@@ -13,8 +13,7 @@ Mostly 1-to-1 translation of the Python AST to lean.
 see: https://docs.python.org/3/library/ast.html
 -/
 
-namespace NKL
-namespace Python
+namespace KLR.Python
 
 structure Pos where
   lineno : Nat := 0

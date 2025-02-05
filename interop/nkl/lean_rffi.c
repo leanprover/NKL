@@ -11,7 +11,7 @@ Authors: Paul Govereau
 // Lean part
 
 extern void lean_initialize_runtime_module();
-extern lean_object* initialize_NKL(uint8_t builtin, lean_object*);
+extern lean_object* initialize_KLR(uint8_t builtin, lean_object*);
 extern lean_object* parse_json(lean_object*, lean_object*);
 extern lean_object* lean_io_error_to_string(lean_object * err);
 
@@ -20,7 +20,7 @@ static lean_object *world = NULL;
 int lean_init() {
   lean_initialize_runtime_module();
   world = lean_io_mk_world();
-  lean_object *res = initialize_NKL(1, world);
+  lean_object *res = initialize_KLR(1, world);
   if (!lean_io_result_is_ok(res)) {
     lean_io_result_show_error(res);
     lean_dec(res);
