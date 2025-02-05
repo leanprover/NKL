@@ -3,16 +3,16 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.KLR
-import NKL.Trace.Types
+import KLR.Core
+import KLR.Trace.Types
 
 /-
 # Tracing for Tensor related operations
 
 TODO: These are just place holders...
 -/
-namespace NKL.Trace
-open NKL.KLR
+namespace KLR.Trace
+open KLR.Core
 
 private def tensor_call (op : String) (args : List Expr) : Term :=
   let type := if let .tensor t :: _ := args

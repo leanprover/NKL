@@ -6,16 +6,16 @@ set -x
 # Need to decide which of lake or setuptools is better to use,
 # and how we will distribute everything
 
-# make sure libNKL.a is generated
-(cd ..; lake build NKL)
+# make sure libKLR.a is generated
+(cd ..; lake build KLR)
 
 LEAN_PREFIX=$(lean --print-prefix)
 LEAN_CFLAGS="-I${LEAN_PREFIX}/include"
 LEAN_LDFLAGS="-L${LEAN_PREFIX}/lib -L${LEAN_PREFIX}/lib/lean -L../.lake/build/lib"
-LEAN_LIBS="-lNKL -lLean -lStd -lInit -lleanrt -lleancpp -luv -lgmp -lc++"
+LEAN_LIBS="-lKLR -lLean -lStd -lInit -lleanrt -lleancpp -luv -lgmp -lc++"
 
 # we can use the following to dynamically link the lean code
-#LEAN_LIBS="-lNKL -lInit_shared -lleanshared"
+#LEAN_LIBS="-lKLR -lInit_shared -lleanshared"
 
 
 PY_VER=$(python -V)

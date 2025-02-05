@@ -4,9 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 
-import NKL.NKI
+-- TODO This file is out of date
 
-namespace NKL
+import KLR.Core.Basic
+
+namespace KLR.Core
 
 -- Some experimental definitions of semantics for expresssions
 -- For now, I am abstracting over the types of tensors and

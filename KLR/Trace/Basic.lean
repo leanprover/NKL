@@ -3,9 +3,9 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.KLR
-import NKL.Trace.Types
-import NKL.Trace.Tensor
+import KLR.Core
+import KLR.Trace.Types
+import KLR.Trace.Tensor
 
 /-
 # Basic tracing facilities
@@ -13,7 +13,7 @@ import NKL.Trace.Tensor
 Basic tracing definitions only deal with Terms (not Python sources)
 -/
 
-namespace NKL.KLR.Const
+namespace KLR.Core.Const
 
 -- Python-like rules for conversion to boolean
 def isTrue : Const -> Bool
@@ -43,14 +43,14 @@ def toInt : Const -> Err Int
       | .none  => throw s!"string {s} cannot be converted to an integer"
       | .some i => return i
 
-end NKL.KLR.Const
+end KLR.Core.Const
 
-namespace NKL.Trace
-open NKL.KLR
+namespace KLR.Trace
+open KLR.Core
 
 -- Operators within index expressions
 
-def indexBinOp : String -> KLR.IndexExpr -> KLR.IndexExpr -> Err KLR.IndexExpr
+def indexBinOp : String -> IndexExpr -> IndexExpr -> Err IndexExpr
   | "Add" ,      l,      r => return .add l r
   | "Sub" ,      l,      r => return .add l r.neg
   | "Mult", .int i,      e
@@ -59,7 +59,7 @@ def indexBinOp : String -> KLR.IndexExpr -> KLR.IndexExpr -> Err KLR.IndexExpr
   | "Mod" ,      e, .int i => return .mod e i
   | _, _, _ => throw "invalid index expression"
 
-def indexUnOp : String -> KLR.IndexExpr -> Err KLR.IndexExpr
+def indexUnOp : String -> IndexExpr -> Err IndexExpr
   | "USub", e => return .neg e
   | _, _ => throw "invalid index expresssion"
 
@@ -111,6 +111,7 @@ private def mulseq (l : List a) : Const -> Err (List a)
   | _           => throw "invalid multiply"
 
 -- Binary operators on constants
+-- Note: both Lean and Python use big integers
 private def constOp : BinOp -> Const -> Const -> Err Term
   | .add, .int l, .int r => return int (l + r)
   | .sub, .int l, .int r => return int (l - r)

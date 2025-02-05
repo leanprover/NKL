@@ -3,17 +3,17 @@ Copyright (c) 2024 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
-import NKL.KLR
-import NKL.Trace.Types
-import NKL.Trace.Builtin
+import KLR.Core
+import KLR.Trace.Types
+import KLR.Trace.Builtin
 
 /-
 # NKI built-ins
 
 This module defines the builtin constants used by tracing for NKI kernels.
 -/
-namespace NKL.Trace
-open NKL.KLR
+namespace KLR.Trace
+open KLR.Core
 
 private def nki : Name := .str .anonymous "nki"
 private def nki_isa : Name := .str nki "isa"
@@ -96,6 +96,7 @@ def NKIEnv : List (Name × Item) :=
   , const_var (nl "add")
   , const_var (nl "load")
   , const_var (nl "store")
+  , const_var (nl "exp")
   , global tile_size
   , global arange
   ]

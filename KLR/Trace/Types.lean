@@ -4,16 +4,16 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Paul Govereau
 -/
 import Lean
-import NKL.Util
-import NKL.KLR
-import NKL.Python
+import KLR.Util
+import KLR.Core
+import KLR.Python
 
 /-
 # Basic types for tracing
 
 Tracing is a special form of partial evaluation. After parsing the original
 python terms, they are "traced" to produce simpler KLR terms. Therefore the
-input to tracing is a `NKL.Python` AST, and the output is a `NKL.KLR` AST. The
+input to tracing is a `KLR.Python` AST, and the output is a `KLR.Core` AST. The
 tracing process introduces an intermediate AST, called `Term` which is an
 extension of the `KLR.Expr` type. The `Term` type is used to represent
 sub-expressions that are in the process of being traced, but not yet
@@ -59,8 +59,8 @@ This module defines types to represent the built-ins, the environments, and the
 tracing monads.
 -/
 
-namespace NKL.Trace
-open NKL.KLR
+namespace KLR.Trace
+open KLR.Core
 
 -- Lean already has a perfectly nice hierarchical string type
 export Lean (Name)
@@ -162,7 +162,7 @@ where
   | [] => []
   | x :: xs => type x :: types xs
 
-def Term.toKLR : Term -> Err KLR.Expr
+def Term.toKLR : Term -> Err Core.Expr
   | .object obj  => return .var obj.name.toString
   | .tuple _     => throw "tuple cannot be converted to a KLR term"
   | .list _      => throw "list cannot be converted to a KLR term"
@@ -174,7 +174,7 @@ def Term.toKLR : Term -> Err KLR.Expr
 -- location (for error reporting), and the local environment. The global
 -- environment is in the `Tracer` monad (below).
 
-export NKL.Python (Pos)
+export KLR.Python (Pos)
 abbrev Env := Lean.RBMap Name Term compare
 
 structure State where

@@ -12,7 +12,7 @@ This language is the result of "tracing", and is used as the
 portable format, a.k.a. Kernel Language Representation (KLR).
 -/
 
-namespace NKL.KLR
+namespace KLR.Core
 
 -- TODO switch to TensorLib's version of these types
 --export TensorLib (Tensor Dtype Shape)
