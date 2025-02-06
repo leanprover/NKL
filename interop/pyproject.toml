@@ -9,8 +9,22 @@ authors = [
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["trainium", "tpu", "pallas", "triton", "gpu"]
+
+# Note, dependencies here are "abstract" while the same
+# lines in requirements.txt are "pinned".
+# https://stackoverflow.com/questions/74508024/is-requirements-txt-still-needed-when-using-pyproject-toml
+# For now we'll just keep both, but maybe we can drop one or the
+# other. requirements.txt is nice to have for installing
+# deps from GitHub Actions.
 dependencies = [
+  "ml_dtypes",
   "numpy",
+]
+
+[tool.pytest.ini_options]
+pythonpath = "." # Needed for tests to pass
+testpaths = [
+  "test",
 ]
 
 [project.urls]

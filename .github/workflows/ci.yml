@@ -2,17 +2,36 @@ name: CI
 
 on:
   push:
-    branches: ["main"] 
-  pull_request:
     branches: ["main"]
-  workflow_dispatch:
+  pull_request:
+    branches: ["**"] # * does not match '/'
+  workflow_dispatch: # For manually triggering a build: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_dispatch
 
 jobs:
   build:
+    # TODO: Run on OSX
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      # Build (and test) Lean. Tests are all via #guard macros
+      # now so you can't really build without testing.
       - uses: leanprover/lean-action@v1
       - name: Run tests
         run: lake exe klr
+
+      # Run pytest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+      - name: Install dependencies
+        working-directory: ./interop
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run pytest
+        working-directory: ./interop
+        run: |
+          pytest
