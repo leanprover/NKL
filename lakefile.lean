@@ -11,3 +11,6 @@ lean_lib "KLR" where
 @[default_target]
 lean_exe "klr" where
   root := `Main
+
+lean_exe "bir" where
+  root := `BIRMain
