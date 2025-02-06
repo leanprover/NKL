@@ -9,8 +9,14 @@ on:
 
 jobs:
   build:
-    # TODO: Run on OSX
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # We mainly care about hardware rather than OS
+        # macos-13 is x86. All later ones are arm64
+        # ubuntu-latest is x64
+        os: [macos-13, macos-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
