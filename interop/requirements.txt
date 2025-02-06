@@ -1,0 +1,4 @@
+# This is the place to add pinned versions if we have any build troubles
+ml_dtypes
+numpy
+pytest
