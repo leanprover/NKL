@@ -1,11 +1,17 @@
+# NB: All this setuptools stuff took about 1000 hours to figure out so never delete this.
+[build-system]
+#requires = ["setuptools>=61.0"]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "klr"
-version = "0.0.2"
-description = "Intermediate langauge for tensor compilers"
+version = "0.0.3"
 authors = [
   {name = "Paul Govereau", email = "govereau@amazon.com"},
   {name = "Sean McLaughlin", email = "seanmcl@amazon.com"},
 ]
+description = "Intermediate langauge for tensor compilers"
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["trainium", "tpu", "pallas", "triton", "gpu"]
@@ -20,6 +26,10 @@ dependencies = [
   "ml_dtypes",
   "numpy",
 ]
+requires-python = ">= 3.8" # cibuildwheel can't seem to handle eariler versions
+
+[project.urls]
+Repository = "https://github.com/leanprover/KLR"
 
 [tool.pytest.ini_options]
 pythonpath = "." # Needed for tests to pass
@@ -27,5 +37,13 @@ testpaths = [
   "test",
 ]
 
-[project.urls]
-Repository = "https://github.com/leanprover/KLR"
+[tool.setuptools]
+packages = ["bin", "klr", "nki", 'nki.isa', 'nki.language'] # This field is tequired to have more than 1 top level packages (nki/klr). It's not beautiful but it works.
+
+# Build a fake C file to trick the `build` command to make an arch-specific wheel
+# We need this because we hide our `klr` Lean binary in the wheel but Python tools
+# don't know about it. I couldn't find another way to stop Python from generating
+# a generic `any` wheel.
+[[tool.setuptools.ext-modules]]
+name = "noop"
+sources = ["noop.c"]

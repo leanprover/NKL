@@ -1,6 +1,6 @@
-.lake/**
+\.lake/
 __pycache__/
 *.so
 *.dSYM
-/.vscode/
-.wheel/
+.vscode/
+/.wheel/

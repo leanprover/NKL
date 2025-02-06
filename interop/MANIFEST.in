@@ -1,1 +1,2 @@
-include klr/bin/*
+# All files must be below the python project root
+include bin/klr

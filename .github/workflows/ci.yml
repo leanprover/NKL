@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["**"] # For now, let's build all branches. Roll this back if it gets too slow or we exhaust our quota.
   pull_request:
     branches: ["**"] # * does not match '/'
   workflow_dispatch: # For manually triggering a build: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_dispatch
@@ -12,9 +12,10 @@ jobs:
     strategy:
       matrix:
         # We mainly care about hardware rather than OS
-        # macos-13 is x86. All later ones are arm64
+        # macos-13 is x86
+        # macos-latest is arm64
         # ubuntu-latest is x64
-        os: [macos-13, macos-latest, ubuntu-latest]
+        os: [ubuntu-latest, macos-latest, macos-13]
 
     runs-on: ${{ matrix.os }}
 
@@ -26,7 +27,6 @@ jobs:
       - uses: leanprover/lean-action@v1
       - name: Run tests
         run: lake exe klr
-
       # Run pytest
       - uses: actions/setup-python@v5
         with:
@@ -41,3 +41,18 @@ jobs:
         working-directory: ./interop
         run: |
           pytest
+      - name: Make a wheel
+        # https://github.com/pypa/cibuildwheel
+        # Hit this: https://github.com/pypa/cibuildwheel/discussions/1926
+        env:
+          # https://github.com/leanprover/lean4/pull/6631/files
+          MACOSX_DEPLOYMENT_TARGET: 99.0
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_SKIP: 'pp* *-win32 *-manylinux_i686 *-musllinux_*' # The build doesn't work 686 or musl
+        run: |
+          pip install cibuildwheel
+          bin/make-wheel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./.wheel/wheelhouse/*.whl
