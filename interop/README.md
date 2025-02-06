@@ -1,3 +1,4 @@
+
 Python bindings for KLR
 
 # Usage
@@ -19,3 +20,11 @@ We do this to remove a dependency on the `neuronxcc` Python package that does no
    require it since it's large and unnecessary.
 
 2. Automatically sync `nki` examples with the github examples
+
+# Notes
+
+I keep getting __pycache__ directories created in the source tree, even with
+
+    export PYTHONDONTWRITEBYTECODE=1
+
+This is annoying.

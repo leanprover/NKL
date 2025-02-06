@@ -7,7 +7,6 @@ import inspect
 import json
 import numpy as np
 import os
-import pathlib
 import subprocess
 import tempfile
 import types
@@ -16,10 +15,16 @@ from collections import deque
 from textwrap import dedent
 from importlib.resources import files
 
+def up(f, n):
+  d = os.path.dirname(f)
+  for _ in range(n):
+    d = os.path.dirname(d)
+  return d
+
 
 def run_klr(infile, outfile):
   # For development, pick up the klr binary from the project dir
-  project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  project_root = up(os.path.abspath(__file__), 2)
   bin = project_root + '/bin/klr'
   if not os.path.isfile(bin):
     # For regular pip users, pick up the klr from the wheel. While the type of `bin` here is
