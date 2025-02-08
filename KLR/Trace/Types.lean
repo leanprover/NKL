@@ -295,11 +295,11 @@ def getPos : Tracer Pos :=
 def withPos (p : Pos) (m : Tracer a) : Tracer a :=
   fun g s => m g { s with pos := p }
 
-def withSrc (source : String) (m : Tracer a) : Tracer a :=
+def withSrc (line : Nat) (source : String) (m : Tracer a) : Tracer a :=
   try withPos {} m
   catch e => do
     let pos <- getPos
-    throw (Python.Parsing.genError source e pos)
+    throw (Python.Parsing.genError line source e pos)
 
 /-
 Enter a new scope, replacing the local state on exit. Note: we preserve the

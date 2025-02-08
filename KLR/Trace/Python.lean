@@ -320,7 +320,7 @@ partial def function_call (f : Fun)
                           (kwargs : List (String × Term))
                           : Tracer Unit := do
   let args <- bind_args f args kwargs (rename:=true)
-  withSrc f.source $ enterFun $ do
+  withSrc f.line f.source $ enterFun $ do
     args.forM fun (x,e) => do extend x.toName e
     f.body.forM stmt
 

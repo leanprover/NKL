@@ -177,9 +177,14 @@ class Parser(ast.NodeVisitor):
     if f is None:
       return
     try:
-      match ast.parse(dedent(inspect.getsource(f))):
+      # get the source lines and starting offset in file
+      src, line = inspect.getsourcelines(f)
+      # remove leading indentation to prevent parse failures
+      # for nested or class functions
+      src = dedent("".join(src))
+      match ast.parse(src):
         case ast.Module([ast.FunctionDef(_, args, body)]):
-          self.workq.append((fname, f, args, body))
+          self.workq.append((fname, src, line, f, args, body))
         case _:
           assert 0, "expecting function definition"
     except Exception:
@@ -187,19 +192,20 @@ class Parser(ast.NodeVisitor):
 
   def do_work(self):
     while len(self.workq) > 0:
-      fullname, f, args, body = self.workq.popleft()
+      fullname, src, line, f, args, body = self.workq.popleft()
       if fullname in self.funcs:
         continue
-      self.funcs[fullname] = self.translate(f, args, body)
+      self.funcs[fullname] = self.translate(src, line, f, args, body)
 
-  def translate(self, f: types.FunctionType, args: ast.arguments, body: [ast.AST]):
+  def translate(self, src: str, line: int, f: types.FunctionType, args: ast.arguments, body: [ast.AST]):
     self.f = f
     for s in body:
       self.visit(s)
     l, d = self.process_args(f.__defaults__, f.__kwdefaults__)
     args.defaults = l
     args.kw_defaults = d
-    return { 'source': inspect.getsource(f)
+    return { 'source': src
+           , 'line': line
            , 'args': args
            , 'body': body
            }

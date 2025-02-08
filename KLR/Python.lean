@@ -153,6 +153,7 @@ def Args.all_defaults (args : Args) : List (String × Expr') :=
   dflt ++ args.kw_defaults
 
 structure Fun where
+  line : Nat
   source : String
   args : Args
   body: List Stmt
@@ -241,7 +242,7 @@ private def withPos (p : String -> Json -> Parser b) (f : b -> Pos -> a) : Json 
     return (f exp pos)
   | _ => throw "expecting object"
 
-def genError (source err : String) (pos : Pos) : String :=
+def genError (offset : Nat) (source err : String) (pos : Pos) : String :=
   let lines := source.splitOn "\n"
   let lineno := pos.lineno - 1
   let colno := pos.col_offset
@@ -249,11 +250,13 @@ def genError (source err : String) (pos : Pos) : String :=
               then "<source not available>"
               else lines[lineno]!
   let indent := (Nat.repeat (List.cons ' ') colno List.nil).asString
-  s!"line {lineno}:\n{line}\n{indent}^-- {err}"
+  s!"line {lineno + offset}:\n{line}\n{indent}^-- {err}"
 
-private def withSrc (source : String) (p : Parser a) : Parser a :=
+private def withSrc (line : Nat) (source : String) (p : Parser a) : Parser a :=
   try set { lineno := 0 : Pos } ; p
-  catch e => get >>= throw ∘ genError source e
+  catch e => do
+    let pos <- get
+    throw (genError line source e pos)
 
 -------------------------------------------------------------------------------
 -- Python AST Json objects
@@ -415,11 +418,12 @@ where
     return (<- field str obj "arg")
 
 def function (j : Json) : Parser Fun := do
+  let line <- j.getObjValAs? Nat "line"
   let source <- field str j "source"
-  withSrc source do
+  withSrc line source do
     let args <- field arguments j "args"
     let body <- field (list stmt) j "body"
-    return Fun.mk source args body
+    return Fun.mk line source args body
 
 def kernel (j : Json) : Parser Kernel := do
   let name <- field str j "entry"
