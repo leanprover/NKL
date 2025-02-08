@@ -147,6 +147,11 @@ structure Args where
 def Args.names (args : Args) : List String :=
   args.posonlyargs ++ args.args ++ args.kwonlyargs
 
+-- TODO: does not compute required keyword args
+def Args.required (args : Args) : List String :=
+  let pargs := args.posonlyargs ++ args.args
+  pargs.take (pargs.length - args.defaults.length)
+
 def Args.all_defaults (args : Args) : List (String × Expr') :=
   let pargs := args.posonlyargs ++ args.args
   let dflt  := pargs.reverse.zip args.defaults.reverse
@@ -184,6 +189,30 @@ structure Kernel where
   args : List Expr'
   kwargs : List (String × Expr')
   globals : List (String × Expr')
+
+/-
+POC: try to guess suitable arguments if none suplied (see bin/gather).
+We could do a much better job, but for now just assume any missing
+arguments (that do not have default values) are tensors, and provide
+a small test tensor (10x10 float32).
+
+How to do better:
+  - Check type annotations from user
+  - Run type inference
+  - Provide command-line arguments to adjust how we pick defaults
+-/
+def Kernel.inferArguments (k : Kernel) : Kernel :=
+  if k.args.length > 0 then k else
+    match inferArgs with
+    | none => k
+    | some args => { k with args := args }
+where
+  inferArgs : Option (List Expr') := do
+    let f <- k.funcs.lookup k.entry
+    let args := f.args.required
+    let ten := Expr.exprPos (.const (.int 10)) {}
+    let tensors := args.map fun _ => .tensor [ten,ten] "float32"
+    return tensors
 
 -------------------------------------------------------------------------------
 -- Converting Python AST from Json
