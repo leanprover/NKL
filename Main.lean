@@ -14,7 +14,7 @@ def parseJson (p : Parsed) : IO UInt32 := do
   let file := p.positionalArg! "file" |>.as! String
   let s <- IO.FS.readFile file
   let kernel <- KLR.Python.Parsing.parse s
-  let stmts <- KLR.Trace.runNKIKernel kernel
+  let stmts <- KLR.Trace.runNKIKernel kernel.inferArguments
   let json := Lean.Json.arr (stmts.map Lean.toJson).toArray
   IO.println json
   return 0
