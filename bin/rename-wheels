@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e -u -o pipefail
+trap "kill 0" SIGINT SIGTERM
+
+# Used to rename wheels before uploading wheels to pypi
+
+# pypi can't handle the 99.0 version tags. We need to move those back to versions it is OK with
+# While sketchy in the extreme, this should hopefully work. Why?
+# - The step that fails without the 99.0 bump is 'delocate' which looks for libs
+#   linked in at different versions.
+# - Lean/Lake don't have external dependencies besides system libs
+#   https://leanprover.zulipchat.com/#narrow/channel/424609-lean-at-aws/topic/.E2.9C.94.20Build.20static.20binary
+#   I think this is likely a Lean/Lake bug: https://github.com/leanprover/lean4/pull/6631/files
+# - We are setting the version back to the OS that it was compiled on.
+# - Counterpoint to things being OK: if it's true that there are only system libraries, then
+#   `delocate-wheel` shouldn't do anything, but then it's not clear why it's complaining
+#   about the 99.0 min version of Lean.
+
+
+# Example output of ls -1:
+# klr-0.0.3-cp310-cp310-macosx_99_0_arm64.whl
+# klr-0.0.3-cp310-cp310-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# klr-0.0.3-cp311-cp311-macosx_99_0_arm64.whl
+# klr-0.0.3-cp311-cp311-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# klr-0.0.3-cp312-cp312-macosx_99_0_arm64.whl
+# klr-0.0.3-cp312-cp312-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# klr-0.0.3-cp313-cp313-macosx_99_0_arm64.whl
+# klr-0.0.3-cp313-cp313-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# klr-0.0.3-cp38-cp38-macosx_99_0_arm64.whl
+# klr-0.0.3-cp38-cp38-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+# klr-0.0.3-cp39-cp39-macosx_99_0_arm64.whl
+# klr-0.0.3-cp39-cp39-macosx_99_0_x86_64.whl
+# klr-0.0.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+
+x86_suffix=macosx_99_0_x86_64
+arm_suffix=macosx_99_0_arm64
+for file in *; do
+  if [[ "$file" == *"$x86_suffix"* ]]; then
+    newname=$(echo "$file" | sed "s/$x86_suffix/macosx_13_0_x86_64/g")
+    mv $file $newname
+    echo "Renamed: $file -> $newname"
+  fi
+  if [[ "$file" == *"$arm_suffix"* ]]; then
+    newname=$(echo "$file" | sed "s/$arm_suffix/macosx_14_0_arm64/g")
+    mv $file $newname
+    echo "Renamed: $file -> $newname"
+  fi
+done

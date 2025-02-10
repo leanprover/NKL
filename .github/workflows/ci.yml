@@ -1,10 +1,17 @@
+# Do not rename this file. It is used by name in the trusted publisher section
+# in pypi.org and test.pypi.org
+
 name: CI
 
 on:
   push:
-    branches: ["**"] # For now, let's build all branches. Roll this back if it gets too slow or we exhaust our quota.
+    branches:
+    - '**' # For now, let's build all branches. Roll this back if it gets too slow or we exhaust our quota.
+    tags:
+    - 'v[0-9]+.[0-9]+.[0-9]+' # Build v1.2.3 tags as well. We'll use tags as the criteria for publishing
   pull_request:
-    branches: ["**"] # * does not match '/'
+    branches:
+    - '**' # * does not match '/' like sm/my-feature
   workflow_dispatch: # For manually triggering a build: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_dispatch
 
 jobs:
@@ -25,34 +32,107 @@ jobs:
       # Build (and test) Lean. Tests are all via #guard macros
       # now so you can't really build without testing.
       - uses: leanprover/lean-action@v1
-      - name: Run tests
+
+      - name: Run Lean tests
         run: lake exe klr
-      # Run pytest
-      - uses: actions/setup-python@v5
+
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
           cache: 'pip'
+
       - name: Install dependencies
         working-directory: ./interop
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run pytest
         working-directory: ./interop
         run: |
           pytest
-      - name: Make a wheel
-        # https://github.com/pypa/cibuildwheel
-        # Hit this: https://github.com/pypa/cibuildwheel/discussions/1926
-        env:
-          # https://github.com/leanprover/lean4/pull/6631/files
-          MACOSX_DEPLOYMENT_TARGET: 99.0
-          CIBW_BUILD_VERBOSITY: 1
-          CIBW_SKIP: 'pp* *-win32 *-manylinux_i686 *-musllinux_*' # The build doesn't work 686 or musl
-        run: |
-          pip install cibuildwheel
-          bin/make-wheel
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
-          path: ./.wheel/wheelhouse/*.whl
+
+  # Mostly followed guides here:
+  # - https://github.com/pypa/gh-action-pypi-publish?tab=readme-ov-file
+  # - https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
+  # NB: I needed to set the trusted publisher to repo NKL, not KLR, since that was its original name. Scary detail! No idea how I'd figure that out without knowing the original name.
+  publish-to-testpypi:
+    name: Publish Python 🐍 distribution 📦 to TestPyPI
+    needs:
+    - build
+    if: startsWith(github.ref, 'refs/tags/')  # only publish to pypi on tag pushes
+    runs-on: ubuntu-latest
+
+    environment:
+      name: testpypi
+
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - uses: actions/checkout@v4 # for scripts
+
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        # name: python-package-distributions
+        # # unpacks all CIBW artifacts into dist/
+        # pattern: cibw-*
+        path: dist/
+        merge-multiple: true
+
+    - name: List the wheels
+      run: |
+        ls -1 dist/
+
+    - name: Rename OSX wheels
+      working-directory: ./dist
+      run: ../bin/rename-wheels # .. because we are starting in ./dist
+
+    - name: Publish distribution 📦 to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        verbose: true
+        skip-existing: true
+
+  # For this step to succeed, you must have bumped the klr version in interop/pyproject.toml
+  publish-to-pypi:
+    name: Publish Python 🐍 distribution 📦 to PyPI
+    needs:
+    - build
+    if: startsWith(github.ref, 'refs/tags/')  # only publish to pypi on tag pushes
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+    steps:
+    - uses: actions/checkout@v4 # for scripts
+
+    - name: Download all the dists
+      uses: actions/download-artifact@v4
+      with:
+        # name: python-package-distributions
+        # # unpacks all CIBW artifacts into dist/
+        # pattern: cibw-*
+        path: dist/
+        merge-multiple: true
+
+    - name: List the wheels
+      run: |
+        ls -1 dist/
+
+    - name: Rename OSX wheels
+      working-directory: ./dist
+      run: ../bin/rename-wheels # .. because we are starting in ./dist
+
+    - name: Publish distribution 📦 to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        verbose: true
