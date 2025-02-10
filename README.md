@@ -22,3 +22,11 @@ a simple file-IO pipeline;
   3. KLR reads kernel.json
   4. KLR writes klr.json
   5. Python reads klr.json into a data structure
+
+
+# Steps to make a new version/wheel
+
+1. Bump the build or minor version in interop/pyproject.toml
+2. Create a git tag of the form v1.2.3 and push it to KLR repo
+
+This should trigger a build that uploads the artifacts to pypi.

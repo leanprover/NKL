@@ -5,8 +5,8 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "klr"
-version = "0.0.3"
+name = "klr-lang"
+version = "0.0.6"
 authors = [
   {name = "Paul Govereau", email = "govereau@amazon.com"},
   {name = "Sean McLaughlin", email = "seanmcl@amazon.com"},
