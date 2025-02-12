@@ -73,6 +73,7 @@ def Term.isTrue : Term -> Err Bool
   | .list _   => return true
   | .ellipsis => return true
   | .slice _ _ _ => return true
+  | .store _ _ _ => return true
   | .expr (.const c) _ => return c.isTrue
   | .expr _ _ => throw "non-constant expression"
 
@@ -264,7 +265,7 @@ def Term.attr : Term -> String -> TraceM Term
   | t, id => throw s!"unsupported attribute {id} on {repr t}"
 where
   str s  := .expr (.const $ .string s) .string
-  list l := .list $ l.map fun i => .expr (.const (.int i)) .int
+  list l := .list $ l.map fun i => .expr (.const (.int $ .ofNat i)) .int
 
 def Item.attr : Item -> String -> Tracer Item
   | .module n, id => lookup_global (n.str id)
@@ -281,4 +282,5 @@ def Term.call (f : Term)
   | .list _      => throw "list is not a callable type"
   | .ellipsis    => throw "ellipsis is not a callable type"
   | .slice _ _ _ => throw "slice is not a callable type"
+  | .store _ _ _ => throw "tensor is not a callable type"
   | .expr f _    => return .expr (.call f args kws) (.obj "object".toName)

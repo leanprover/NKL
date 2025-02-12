@@ -113,7 +113,24 @@ to a set of tensor indexes, or to a pass statement depending on context.
 A slice is only valid in a tensor access context in KLR, but may also be
 used with a list at trace time, or may float around as a term for a while
 before it finds a home in a KLR term.
-TODO: KLR expressions should have KLR types, not TermTypes
+
+The store expression is an interesting case. In the original python
+code, a store can show up in an expression context. For example:
+
+  c = nl.load(a) + nl.load(b)
+
+Which is technically:
+
+  c = (store(t1, nl.load(a)) + store(t2, nl.load(b))
+
+In KLR, these stores must be lifted up to the statement level:
+
+  store(t1, nl.load(a))
+  store(t2, nl.load(b))
+  c = t1 + t2
+
+The `store` term is an expression, and the tracing code will lift it
+up to a KLR statement in the `RValue` function.
 -/
 inductive Term where
   | object   : Object -> Term
@@ -121,6 +138,7 @@ inductive Term where
   | list     : List Term -> Term
   | ellipsis : Term
   | slice    : Option Int -> Option Int -> Option Int -> Term
+  | store    : TensorName -> List Index -> Expr -> Term
   | expr     : Expr -> TermType -> Term
 end
 
@@ -130,7 +148,8 @@ def Term.format : Term -> Lean.Format
   | .list l => .text s!"list<{l.length}>"
   | .ellipsis => .text "ellipsis"
   | .slice a b c => .text s!"slice({a},{b},{c})"
-  | .expr e ty  => repr e ++ ":" ++ repr ty
+  | .store t ix e => Lean.format (Stmt.store t ix e)
+  | .expr e ty  => Lean.format e ++ ":" ++ repr ty
 
 instance : Repr Term where reprPrec b _ := b.format
 
@@ -156,6 +175,7 @@ def Term.type : Term -> TermType
   | .list l      => .list (types l)
   | .ellipsis    => .obj "ellipsis".toName
   | .slice _ _ _ => .obj "slice".toName
+  | .store t _ _ => .tensor t.dtype t.shape -- TODO: incorrect, but unused?
   | .expr _ ty   => ty
 where
   types : List Term -> List TermType
@@ -168,7 +188,22 @@ def Term.toKLR : Term -> Err Core.Expr
   | .list _      => throw "list cannot be converted to a KLR term"
   | .ellipsis    => throw "ellipsis cannot be converted to a KLR term"
   | .slice _ _ _ => throw "slice cannot be converted to KLR in this context"
+  | .store _ _ _ => throw "store cannot be converted to KLR in this context"
   | .expr e _    => return e
+
+-- TODO not efficient!
+mutual
+partial def Term.tensors : Term -> List Core.TensorName
+  | .object _  => []
+  | .tuple l | .list l => all_tensors l
+  | .ellipsis    => []
+  | .slice _ _ _ => []
+  | .store t _ _ => [t]
+  | .expr e _    => e.tensors
+
+partial def Term.all_tensors (l : List Term) : List Core.TensorName :=
+  (l.map tensors).flatten.eraseDups
+end
 
 -- Our state has a number for generating fresh names, the current source
 -- location (for error reporting), and the local environment. The global

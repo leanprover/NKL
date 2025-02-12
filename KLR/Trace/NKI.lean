@@ -6,6 +6,7 @@ Authors: Paul Govereau, Sean McLaughlin
 import KLR.Core
 import KLR.Trace.Types
 import KLR.Trace.Builtin
+import KLR.Trace.Tensor
 
 /-
 # NKI built-ins
@@ -14,6 +15,7 @@ This module defines the builtin constants used by tracing for NKI kernels.
 -/
 namespace KLR.Trace
 open KLR.Core
+open KLR.Trace.Builtin
 
 private def nki : Name := .str .anonymous "nki"
 private def nki_isa : Name := .str nki "isa"
@@ -21,15 +23,6 @@ private def nki_lang : Name := .str nki "language"
 
 private def nl : String -> Name := .str nki_lang
 private def nisa : String -> Name := .str nki_isa
-
-private def module (name : Name) : Name × Item :=
-  (name, .module name)
-
-private def const_var (name: Name) : Name × Item :=
-  (name, .term (.expr (.var name.toString) (.obj name)))
-
-private def global (g : Global) : Name × Item :=
-  (g.name, .global g)
 
 /-
 Note: this object contains a bunch of architecture parameters that
@@ -94,9 +87,12 @@ def NKIEnv : List (Name × Item) :=
   , module nki_isa
   , module nki_lang
   , const_var (nl "add")
-  , const_var (nl "load")
-  , const_var (nl "store")
   , const_var (nl "exp")
+  , const_var (nl "shared_hbm")
   , global tile_size
   , global arange
+  , globalFn (nl "ndarray") Tensor.ndarray
+  , globalFn (nl "load") Tensor.load
+  , globalFn (nl "store") Tensor.store
+  , globalFn (nisa "tensor_scalar") Tensor.tensor_scalar
   ]

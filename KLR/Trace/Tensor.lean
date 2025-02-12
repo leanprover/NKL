@@ -5,6 +5,7 @@ Authors: Paul Govereau, Sean McLaughlin
 -/
 import KLR.Core
 import KLR.Trace.Types
+import KLR.Trace.Builtin
 
 /-
 # Tracing for Tensor related operations
@@ -13,6 +14,219 @@ TODO: These are just place holders...
 -/
 namespace KLR.Trace
 open KLR.Core
+open KLR.Trace.Builtin
+
+namespace Tensor
+
+-- decompose a tensor expresssion
+def Expr.inferTensor : Expr -> Err (TensorName × List Index)
+  | .tensor t => return (t, [.ellipsis])
+  | .access t ix => do
+      match <- inferTensor t with
+      | (t, [.ellipsis]) => return (t, ix)
+      | _ => throw "unsupported tensor expression"
+  | _ => throw "expecting tensor"
+
+def Term.inferTensor : Term -> Err (TensorName × List Index)
+  | .expr e (.tensor _ _) => Expr.inferTensor e
+  | _ => throw "expecting tensor"
+
+-- This only handles the simple cases
+-- Note: Maybe only simple cases are possible at this point ??
+def inferShape (t : TensorName) : List Index -> Err Shape
+  | [] | [.ellipsis] => return t.shape
+  | ix => do
+      let base := t.shape
+      if base.length != ix.length then
+        throw "unsupported index"
+      let dims <- (base.zip ix).mapM fun (x, i) =>
+        match i with
+        | .coord _ => return 0
+        | .slice none none none
+        | .slice (some (.int 0)) none none => return x
+        | .slice none (some (.int i)) none
+        | .slice (some (.int 0)) (some (.int i)) none => return i.toNat
+        | _ => throw "unsupported index"
+      return dims.filter (. != 0)
+
+def Expr.inferShape (e : Expr) : Err Shape := do
+  let (t, ix) <- inferTensor e
+  Tensor.inferShape t ix
+
+/-
+Declare a new tensor, unique to the current expression.
+
+We have to calculate how much memory we are going to use. The most memory we
+could need is one tensor for each expression in the source program (loops can
+reuse the same memory in each iteration). This code gives the name of the
+tensor associated with an expression. Right now I am using the source location,
+but we could also use a hash of expression, or something else. Note, this
+expression may be evaluated many times, and we want this function to always
+return the same result.
+
+In the end we walk over the KLR kernel and collect all the TensorNames, and
+these represent the memory we need to allocate in the dram, sbuf, etc.
+-/
+def declare (tag : String)
+            (dtype : Dtype) (shape : Shape) (memory : Memory)
+            : TraceM TensorName := do
+  let pos := (<- get).pos
+  let tname := s!"{tag}.{pos.lineno}.{pos.col_offset}"
+  return {
+    name := tname
+    dtype := dtype
+    shape := shape
+    memory := memory
+    }
+
+-- generate a store expression based on the src shape
+def store_expr (tag : String)
+               (dtype : Dtype) (memory : Memory) (src : Term)
+               : TraceM Term := do
+  match src with
+  | .expr e (.tensor _ shape) => do
+      let dst <- declare tag dtype shape memory
+      return .store dst [.ellipsis] e
+  | _ => throw "expecting tensor"
+
+-- APIs
+
+-- conversion to NKI
+
+private def some_none : Option Term :=
+  some (.expr (.const .none) .none)
+
+private def some_bool (b : Bool) : Option Term :=
+  some (.expr (.const (.bool b)) .bool)
+
+private def some_int (i : Int) : Option Term :=
+  some (.expr (.const (.int i)) .int)
+
+private def some_string (s : String) : Option Term :=
+  some (.expr (.const (.string s)) .string)
+
+-- conversion from NKI
+
+def Option.fromNKI (f : Term -> Err a) (dflt : a) : Term -> Err a
+  | .expr (.const .none) .none => return dflt
+  | e => f e
+
+def Bool.fromNKI : Term -> Err Bool
+ | .expr (.const (.bool b)) .bool => return b
+ | _ => throw "expecting boolean"
+
+def Int.fromNKI : Term -> Err Int
+ | .expr (.const (.int i)) .int => return i
+ | _ => throw "expecting integer"
+
+def Nat.fromNKI (t : Term) : Err Nat :=
+  return (<- Int.fromNKI t).toNat
+
+def Float.fromNKI : Term -> Err Float
+ | .expr (.const (.float f)) .float => return f
+ | _ => throw "expecting float"
+
+def String.fromNKI : Term -> Err String
+  | .expr (.const (.string s)) .string => return s
+  | _ => throw "expecting string"
+
+def Memory.fromNKI (t : Term) : Err Memory :=
+  match t.type with
+  | .obj name =>
+    match name.toString with
+    | "nki.language.shared_hbm" => return .dram
+    | "nki.language.sbuf" => return .sbuf
+    | "nki.language.pmem" => return .pmem
+    | _ => throw "expecting buffer type"
+  | _ => throw "expecting buffer type"
+
+def Shape.fromNKI : Term -> Err Shape
+  | .list l | .tuple l => l.mapM Nat.fromNKI
+  | _ => throw "expecting shape"
+
+def AluOp.fromNKI : Term -> Err AluOp
+  | .expr (.var name) _ =>
+      match name with
+      | "numpy.subtract" => return .subtract
+      | name => throw s!"unsupported operator {name}"
+  | t => throw s!"expecting operator got {repr t}"
+
+/-
+TODO: These definitions are very verbose, but this pattern could be made more
+convenient with a typeclass (fromNKI) and a command macro, maybe something
+like:
+
+#nki ndarray(shape:Shape, dtype:Dtype, memory:Memory = .sbuf) := do
+  let t <- declare "t" dtype shape memory
+  ...
+-/
+def ndarray : GlobalFn :=
+  withArgs [("shape", none),
+            ("dtype", none),
+            ("buffer", some_string "nki.language.sbuf")]
+  fun
+  | [shape, dtype, buf] => do
+      let shape <- Shape.fromNKI shape
+      let dtype <- String.fromNKI dtype
+      let memory <- Memory.fromNKI buf
+      let t <- declare "ndarray" dtype shape memory
+      return .expr (.tensor t) (.tensor dtype shape)
+  | _ => throw "invalid arguments"
+
+def load : GlobalFn :=
+  withArgs [("src", none),
+            ("mask", some_none),
+            ("dtype", some_string "float32")]
+  fun
+  | [t, _, dtype] => do
+      let dtype <- String.fromNKI dtype
+      store_expr "load" dtype .sbuf t
+  | _ => throw "invalid arguments"
+
+def store : GlobalFn :=
+  withArgs [("dst", none),("value", none)]
+  fun
+  | [.expr dst (.tensor _ s₁), .expr src (.tensor _ s₂)] => do
+      if s₁ != s₂ then
+        throw "incompatible shapes {s₁} {s₂}"
+      let (t₁, i₁) <- Expr.inferTensor dst
+      let (t₂, i₂) <- Expr.inferTensor src
+      let src := Expr.access (.tensor t₂) i₂
+      return Term.store t₁ i₁ src
+  | _ => throw "invalid arguments"
+
+def tensor_scalar : GlobalFn :=
+  withArgs [("data", none),
+            ("op0", none),
+            ("operand0",none),
+            ("reverse0", some_bool false),
+            ("op1", some_none),
+            ("operand1", some_none),
+            ("reverse1", some_bool false),
+            ("dtype", some_none)]
+  fun
+  | [data, op0, operand0, reverse0, op1, operand1, reverse1, dtype] => do
+      let (t, ix) <- Term.inferTensor data
+      let shape <- inferShape t ix
+      let dtype <- Option.fromNKI String.fromNKI t.dtype dtype
+      let op : TensorScalar := {
+           op0 := <- AluOp.fromNKI op0
+           const0 := <- Float.fromNKI operand0
+           reverse0 := <- Option.fromNKI Bool.fromNKI false reverse0
+           op1 := <- Option.fromNKI AluOp.fromNKI .bypass op1
+           const1 := <- Option.fromNKI Float.fromNKI 0.0 operand1
+           reverse1 := <- Option.fromNKI Bool.fromNKI false reverse1
+           }
+      let e := Expr.operator (.tensorScalar op)
+      let ty := TermType.tensor dtype shape
+      let e := Expr.call e [.access (.tensor t) ix] []
+      store_expr "tsc" dtype .sbuf (.expr e ty)
+  | _ => throw "invalid arguments"
+
+end Tensor
+
+--------
+-- TODO: These are just placeholdrs for the python operators
 
 private def tensor_call (op : String) (args : List Expr) : Term :=
   let type := if let .tensor t :: _ := args
@@ -34,7 +248,7 @@ def tensor_tensor (op : BinOp) (l r : TensorName) : TraceM Term :=
   return tensor_call op [.tensor l, .tensor r]
 
 private def broadcast (t : TensorName) (c : Const) : Expr :=
-  let args := t.shape.map fun i => Expr.const (.int i)
+  let args := t.shape.map fun i => Expr.const (.int $ .ofNat i)
   let args := .const c :: args
   .call (.var "broadcast") args []
 
