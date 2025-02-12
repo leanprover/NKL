@@ -30,6 +30,29 @@ def trace (p : Parsed) : IO UInt32 := do
     IO.println (Lean.format klr).pretty
   return 0
 
+def parseBIR (p : Parsed) : IO UInt32 := do
+  let file := p.positionalArg! "file" |>.as! String
+  let str <- IO.FS.readFile file
+  let json <- Lean.Json.parse str
+  let bir : KLR.BIR.BIR <- Lean.fromJson? json
+  if p.hasFlag "repr" then
+    IO.println s!"{repr bir}"
+  else
+    IO.println s!"{Lean.toJson bir}"
+  return 0
+
+def compile (p : Parsed) : IO UInt32 := do
+  let file := p.positionalArg! "file" |>.as! String
+  let s <- IO.FS.readFile file
+  let kernel <- KLR.Python.Parsing.parse s
+  let klr <- KLR.Trace.runNKIKernel kernel.inferArguments
+  let bir <- KLR.BIR.compile klr
+  if p.hasFlag "repr" then
+    IO.println (toString $ repr bir)
+  else
+    IO.println (toString $ Lean.toJson bir)
+  return 0
+
 def parseJsonCmd := `[Cli|
   "parse-json" VIA parseJson;
   "Parse KLR kernels as JSON"
@@ -49,11 +72,33 @@ def traceCmd := `[Cli|
     file : String; "File of Python AST printed as JSON"
 ]
 
+def parseBIRCmd := `[Cli|
+  "parse-bir" VIA parseBIR;
+  "Parse a BIR Json file"
+
+  FLAGS:
+    r, repr; "Output Repr format"
+  ARGS:
+    file : String; "File of BIR JSON"
+]
+
+def compileCmd := `[Cli|
+  "compile" VIA compile;
+  "Compile Python to BIR"
+
+  FLAGS:
+    r, repr; "Output Repr format"
+  ARGS:
+    file : String; "File of Python AST printed as JSON"
+]
+
 def klrCmd : Cmd := `[Cli|
   klr NOOP; ["0.0.1"]
   "KLR is an IR for NKI and other tensor-like languages in Lean."
 
   SUBCOMMANDS:
+    compileCmd;
+    parseBIRCmd;
     parseJsonCmd;
     traceCmd
 ]
