@@ -10,11 +10,11 @@ import KLR.Trace.Basic
 import KLR.Trace.Builtin
 import KLR.Trace.Python
 import KLR.Trace.NKI
+import KLR.Trace.Numpy
 
 namespace KLR.Trace
 
-def runNKIKernel (k : KLR.Python.Kernel) : Err (List KLR.Core.Stmt) :=
-  tracer ⟨ .ofList NKIEnv, #[] ⟩ do
-    traceKernel k
-    let g <- get
-    return g.body.toList
+def globalEnv := NKIEnv ++ NumpyEnv
+
+def runNKIKernel (k : KLR.Python.Kernel) : Err KLR.Core.Kernel :=
+  tracer ⟨ .ofList globalEnv, #[] ⟩ (traceKernel k)

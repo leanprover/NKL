@@ -14,11 +14,45 @@ import KLR.Trace.Types
 namespace KLR.Trace
 open KLR.Core
 
+namespace Builtin
+
+def module (name : Name) : Name × Item :=
+  (name, .module name)
+
+def const_var (name: Name) : Name × Item :=
+  (name, .term (.expr (.var name.toString) (.obj name)))
+
+def global (g : Global) : Name × Item :=
+  (g.name, .global g)
+
 abbrev BuiltinAttr := String -> Err Term
 abbrev GlobalAttr  := String -> TraceM Term
 
 abbrev BuiltinFn := List Expr -> List (String × Expr) -> Err Term
 abbrev GlobalFn  := List Term -> List (String × Term) -> TraceM Term
+
+/-
+Fetch the (Python) arguments given in `pos` and `kw` according to the
+specification in `names`. If an argument is not present, a default may be
+specified. If no default is available, throw an error.
+-/
+def getArgs (names : List (String × Option a))
+            (pos : List a) (kw : List (String × a))
+            : Err (List a) := do
+  let extra := names.drop pos.length
+  let kws <- extra.mapM fun (name, dflt) => do
+    match kw.find? (fun p => p.fst == name) with
+    | some x => return x.snd
+    | none => match dflt with
+              | some x => return x
+              | none => throw s!"argument {name} not found"
+  return pos.append kws
+
+-- Convert Python arguments to an order list of terms and call function.
+def withArgs [Monad m] [MonadExcept String m] [MonadLift Err m]
+             (names : List (String × Option a)) (f : List a -> m b)
+             (args : List a) (kwargs : List (String × a)) : m b :=
+    do f (<- getArgs names args kwargs)
 
 def noAttr [Monad m] [MonadExcept String m] : Name -> String -> m a :=
   fun name attr => throw s!"{attr} is not an attribute of {name}"
@@ -42,6 +76,16 @@ def noKWArgs [Monad m] [MonadExcept String m]
     if kwargs.length > 0 then
       throw "invalid arguments (no kwargs supported)"
     else f args
+
+-- Create a simple global function; no attributes supported
+
+def global_fn (name : Name) (f : GlobalFn) : Global :=
+  { name := name
+  , attr := noAttr name
+  , call := f
+  }
+
+def globalFn n f := global (global_fn n f)
 
 -- Create a built-in representing a function; no attributes supported.
 
@@ -123,16 +167,18 @@ where
   | args, [] => return .object (tuple_obj args)
   | _, _ => throw "invalid arguments"
 
+end Builtin
+
 -- A convenience class for building Objects
 
 class Obj (a : Type) where
   name : Name
   type : TermType := .obj name
-  attr : a -> String -> Err Term := fun _ => noAttr name
-  access : a -> List Index -> Err Term := fun _ => noAccess name
-  index : a -> TermType -> Nat -> Err Index := fun _ => noIndex name
-  binop : a -> Bool -> BinOp -> Expr -> Err Term := fun _ => noBinop name
-  call : a -> List Expr -> List (String × Expr) -> Err Term := fun _ => uncallable name
+  attr : a -> String -> Err Term := fun _ => Builtin.noAttr name
+  access : a -> List Index -> Err Term := fun _ => Builtin.noAccess name
+  index : a -> TermType -> Nat -> Err Index := fun _ => Builtin.noIndex name
+  binop : a -> Bool -> BinOp -> Expr -> Err Term := fun _ => Builtin.noBinop name
+  call : a -> List Expr -> List (String × Expr) -> Err Term := fun _ => Builtin.uncallable name
 
 def toObject [inst: Obj a] (x : a) : Object :=
   { name := inst.name

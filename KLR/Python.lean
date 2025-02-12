@@ -189,6 +189,7 @@ structure Kernel where
   args : List Expr'
   kwargs : List (String × Expr')
   globals : List (String × Expr')
+  deriving Repr
 
 /-
 POC: try to guess suitable arguments if none suplied (see bin/gather).

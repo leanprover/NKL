@@ -5,3 +5,4 @@ Authors: Paul Govereau, Sean McLaughlin
 -/
 import KLR.Core
 import KLR.Python
+import KLR.Trace

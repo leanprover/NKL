@@ -50,6 +50,7 @@ def exprToIndex : Core.Expr -> Err Core.Index
   | .const c => return .coord (some $ .int (<- c.toInt))
   | .tensor _ => throw "tensor indirect indexing unsupported"
   | .access _ _ => throw "invalid index"
+  | .operator _ => throw "invalid index"
   | .call _ _ _ => throw "invalid index"
 
 -- Convert a Term to an Index (if possible)
@@ -62,6 +63,7 @@ where
   | .object o => o.index ty pos
   | .ellipsis => return .ellipsis
   | .slice x y z => return .slice (x.map .int) (y.map .int) (z.map .int)
+  | .store _ _ _ => throw "store expression cannot be used as index"
   | .expr e _ => exprToIndex e
 
 -- Note, a list index can be negative, which means index from end of list.
@@ -90,6 +92,7 @@ def access (t : Term) (i : Term) : Err Term := do
   | .list l => list_access "tuple" l i
   | .ellipsis
   | .slice _ _ _ => throw "__subscript__ not supported"
+  | .store _ _ _ => throw "__subscript__ not supported"
   | .expr e _ => return .expr (.access e (<- termToIndex t.type i)) (.obj "object".toName)
 
 /-
@@ -139,13 +142,16 @@ dead-code elimination for simple assignments.
 -/
 
 -- Convert an expression in assignment context (an L-Value).
+-- TODO: handle subscript
 def LValue : Expr -> Tracer Term
   | .exprPos e' p => withPos p (lval e')
 where
   lval : Expr' -> Tracer Term
   | .name id .store => return .expr (.var id) (.obj "object".toName)
+  | .attr _ id .store => throw s!"cannot assign to attribute {id}"
   | .tuple l .store => return .tuple (<- LValue ▷ l)
   | .list  l .store => return .list  (<- LValue ▷ l)
+  | .subscript _ _ .store => throw "unimp subscript store"
   | _ => throw "cannot assign to expression"
 
 -- Convert an R-Value to a pure expression, emitting
@@ -156,6 +162,11 @@ def RValue : Term -> Tracer Term
   | .list   l => return .list  (<- RValue ▷ l)
   | .ellipsis => return .ellipsis
   | .slice a b c => return .slice a b c
+  | .store t ix e => do
+       add_stmt (.store t ix e)
+       if ix == []
+       then return .expr (.tensor t) (.tensor t.dtype t.shape)
+       else return .expr (.access (.tensor t) ix) (.tensor t.dtype t.shape)
   | .expr e@(.call _ _ _) ty => do
        let v := (<- genName).toString
        add_stmt (.assign v e)
@@ -163,7 +174,6 @@ def RValue : Term -> Tracer Term
   | .expr e ty => return .expr e ty
 
 -- Create an assignment to a Core Expr, this must be a variable
--- TODO: should we support tensors and sub-tensors?
 def assignExpr (e : Core.Expr) (t : Term) : Tracer Unit := do
   match e with
   | .var x => extend x.toName t
@@ -182,6 +192,7 @@ def assignTerm (x : Term) (e : Term) : Tracer Unit := do
   | .list  l  => assignList l (<- unpack e)
   | .ellipsis => throw "cannot assign to ellipsis"
   | .slice _ _ _ => throw "cannot assign to slice"
+  | .store _ _ _ => throw "cannot assign to a store"
   | .expr x _ => assignExpr x e
 where
   assignList : List Term -> List Term -> Tracer Unit
@@ -194,7 +205,8 @@ where
 
 -- Top-level assignment handling
 -- e.g. x1 = x2 = e
-def assign (xs : List Term) (e : Term) : Tracer Unit := do
+def assign (xs : List Expr) (e : Term) : Tracer Unit := do
+  let xs <- LValue ▷ xs
   let e <- RValue e
   for x in xs do
     assignTerm x e
@@ -216,10 +228,10 @@ partial def term' (e : Expr') : Tracer Term :=
 partial def klr (e : Expr) : Tracer Core.Expr :=
   return <- (<- term e).toKLR
 
-partial def integer (e : Expr) : Tracer Int := do
+partial def nat (e : Expr) : Tracer Nat := do
   match <- klr e with
-  | .const c => return (<- c.toInt)
-  | _ => throw "expecting integer"
+  | .const c => return (<- c.toInt).toNat
+  | _ => throw "expecting positive integer"
 
 -- Note, this is technically more permissive than python in some contexts (slices)
 partial def integer? : Option Expr -> Tracer (Option Int)
@@ -233,9 +245,9 @@ partial def integer? : Option Expr -> Tracer (Option Int)
 partial def expr' : Expr' -> Tracer Item
   | .const c => return .term (const c)
   | .tensor s dty => do
-      let shape <- integer ▷ s
+      let shape <- nat ▷ s
       let name <- genName "t".toName
-      return .term (.expr (.tensor ⟨ name.toString, dty, shape ⟩) (.tensor dty shape))
+      return .term (.expr (.tensor ⟨ name.toString, dty, shape, .dram ⟩) (.tensor dty shape))
   | .name id _ => lookup_item id.toName
   | .attr (.exprPos e p) id _ => do withPos p ((<- expr' e).attr id)
   | .tuple l _ => return .term (.tuple (<- term ▷ l))
@@ -256,29 +268,40 @@ partial def expr' : Expr' -> Tracer Item
       | .module n => throw s!"module {n} not callable"
       | .global g => return .term (<- g.call (<- term ▷ args) (<- keyword term ▷ kws))
       | .term t   => return .term (<- t.call (<- klr ▷ args) (<- keyword klr ▷ kws))
-      | .source f => do
-          function_call f (<- term ▷ args) (<- keyword term ▷ kws)
-          return .term (.expr (.const .none) .none)
+      | .source f => return .term (<- function_call f (<- term ▷ args) (<- keyword term ▷ kws))
 
 partial def keyword (f : Expr -> Tracer a) : Keyword -> Tracer (String × a)
   | .keyword id e p => withPos p do return (id, (<- f e))
 
-partial def stmt : Stmt -> Tracer Unit
+partial def stmt : Stmt -> Tracer (Option Term)
   | .stmtPos s' p => withPos p (stmt' s')
 
-partial def stmt' : Stmt' -> Tracer Unit
+partial def stmt' : Stmt' -> Tracer (Option Term)
+  | .pass => return none
+  | .ret e => do
+      let t <- term e
+      let t <- RValue t
+      return some t
   | .expr e => do
       let t <- term e
       let _ <- RValue t
+      return none
   | .assert e => do
       let t <- term e
       if (<- t.isFalse) then throw "assertion failed"
-  | .assign xs e => do assign (<- LValue ▷ xs) (<- term e)
-  | .augAssign x op e => do
-      stmt' (.assign [x] (.exprPos (.binOp op x e) (<- getPos)))
-  | .annAssign _ _ .none => return ()
-  | .annAssign x _ (.some e) => stmt' (.assign [x] e)
+      return none
+  | .assign xs e => do assign xs (<- term e); return none
+  | .augAssign x op e => do assign [x] (<- term' (.binOp op x e)); return none
+  | .annAssign _ _ .none => return none
+  | .annAssign x _ (.some e) => do assign [x] (<- term e); return none
   | _s => throw "not yet implemented"
+
+partial def stmts : List Stmt -> Tracer Term
+  | [] => return .expr (.const .none) .none
+  | s :: l => do
+      match <- stmt s with
+      | none => stmts l
+      | some t => return t
 
 -- Bind positional and keyword arguments to a Python function based on its
 -- signature.
@@ -313,16 +336,24 @@ where
   | (s, .expr (.tensor t) ty) => (s, .expr (.tensor {t with name := s}) ty)
   | other => other
 
--- For a function call, first evaluate the argument in the current environment.
--- Then enter a new environment and evaluate the function statements.
+/-
+Function calls are split into two parts because we need to handle the top-level
+kernel function differently: its argument tensors will be inputs, but internal
+function call arguments will not be input tensors.
+-/
+partial def call (f : Fun)
+                 (args : List (String × Term))
+                 : Tracer Term := do
+  withSrc f.line f.source $ enterFun $ do
+    args.forM fun (x,e) => do extend x.toName e
+    stmts f.body
+
 partial def function_call (f : Fun)
                           (args : List Term)
                           (kwargs : List (String × Term))
-                          : Tracer Unit := do
-  let args <- bind_args f args kwargs (rename:=true)
-  withSrc f.line f.source $ enterFun $ do
-    args.forM fun (x,e) => do extend x.toName e
-    f.body.forM stmt
+                          : Tracer Term := do
+  let args <- bind_args f args kwargs (rename:=false)
+  call f args
 
 end
 
@@ -350,17 +381,23 @@ private def globals (k : Kernel) : Tracer Unit := do
       extend_global n (<- expr' e)
 
 -- Call the top-level kernel function
-def traceKernel (k : Kernel) : Tracer Unit := do
+def traceKernel (k : Kernel) : Tracer Core.Kernel := do
   globals k
   match k.funcs.lookup k.entry with
   | none => throw s!"function {k.entry} not found"
   | some f => do
       let args <- k.args.mapM term'
       let kwargs <- k.kwargs.mapM fun (x,e) => return (x, <- term' e)
-      function_call f args kwargs
+      let args <- bind_args f args kwargs (rename := true)
+      let res <- call f args
+      let inputs := Term.all_tensors (args.map fun x => x.snd)
+      let outputs := Term.tensors res
+      return {
+        name := k.entry
+        inputs := inputs
+        outputs := outputs
+        body := (<- get).body.toList
+      }
 
-def runKernel (k : Kernel) : Err (List Core.Stmt) :=
-  tracer ⟨ ∅, #[] ⟩ do
-    traceKernel k
-    let g <- get
-    return g.body.toList
+def runKernel (k : Kernel) : Err Core.Kernel :=
+  tracer ⟨ ∅, #[] ⟩ (traceKernel k)

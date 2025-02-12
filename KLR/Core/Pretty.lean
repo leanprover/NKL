@@ -21,8 +21,18 @@ private def abracket (f : Format) : Format :=
 private def ppArgs [ToFormat a] (l : List a) : Format :=
   Format.joinSep l ","
 
+def ppMemory : Memory -> Format
+  | .dram => "dram"
+  | .sbuf => "sbuf"
+  | .pmem => "pmem"
+  | .reg => "reg"
+
 def ppTensor (t : TensorName) : Format :=
-  "%" ++ t.name ++ abracket (t.dtype ++ ":" ++ ppArgs t.shape)
+  t.name ++ abracket (.joinSep [
+    format t.dtype,
+    .paren (.joinSep t.shape ","),
+    ppMemory t.memory
+    ] ",")
 
 def ppConst : Const -> Format
   | .none       => "None"
@@ -53,24 +63,50 @@ def ppIndexExpr? : Option IndexExpr -> Format
 def ppIndex : Index -> Format
   | .ellipsis    => "..."
   | .coord e     => ppIndexExpr? e
+  | .slice none none none => ":"
+  | .slice none u none => "0:" ++ ppIndexExpr? u
+  | .slice s u none => .joinSep ([s,u].map ppIndexExpr?) ":"
   | .slice l u s => .joinSep ([l,u,s].map ppIndexExpr?) ":"
+
+private def ppList (f : a -> Format) : List a -> Format
+  | [] => .nil
+  | x :: xs => .append (f x) (ppList f xs)
 
 partial def ppExpr : Expr -> Format
   | .var x         => x
   | .const c       => ppConst c
   | .tensor t      => ppTensor t
   | .access t ix   => .fill (ppExpr t ++ .sbracket (.joinSep (ix.map ppIndex) ","))
+  | .operator _ => "operator"
   | .call f args kwargs =>
       let args := args.map ppExpr
       let kwargs := kwargs.map fun (x,e) => x ++ "=" ++ ppExpr e
       .fill (ppExpr f ++ .paren (ppArgs (args ++ kwargs)))
 
 def ppStmt : Stmt -> Format
-  | .pass       => "pass"
-  | .expr e     => ppExpr e
   | .ret e      => "ret" ++ ppExpr e
+  | .store t ix e => ppExpr (.access (.tensor t) ix) ++ " := " ++ ppExpr e
   | .assign x e => x ++ " = " ++ ppExpr e
   | .loop _ _ _ _ _ => "<loop>"
+
+def ppFullTensor (t : TensorName) : Format :=
+  t.name ++ abracket (.joinSep [
+    format t.dtype,
+    .paren (.joinSep t.shape ","),
+    ppMemory t.memory
+    ] ",")
+
+def lines (l : List Format) := Format.joinSep l "\n"
+def nest_lines (l : List Format) := Format.nest 2 (.align true ++ lines l)
+
+def ppKernel (k : Kernel) : Format :=
+  lines [
+    Format.text k.name,
+    "inputs:", nest_lines (k.inputs.map ppFullTensor),
+    "outputs:", nest_lines (k.outputs.map ppFullTensor),
+    "internal:", nest_lines (k.internal.map ppFullTensor),
+    "body:", nest_lines (k.body.map ppStmt)
+  ]
 
 instance : ToFormat TensorName where format := ppTensor
 instance : ToFormat Const      where format := ppConst
@@ -78,3 +114,4 @@ instance : ToFormat IndexExpr  where format := ppIndexExpr 0
 instance : ToFormat Index      where format := ppIndex
 instance : ToFormat Expr       where format := ppExpr
 instance : ToFormat Stmt       where format := ppStmt
+instance : ToFormat Kernel     where format := ppKernel
