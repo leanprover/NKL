@@ -8,6 +8,7 @@ lean_lib "KLR" where
 
 @[default_target]
 lean_exe "klr" where
+  defaultFacets := #[LeanLib.staticFacet]
   root := `Main
 
 require Cli from git
