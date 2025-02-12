@@ -53,6 +53,22 @@ jobs:
         run: |
           pytest
 
+      - name: Make a wheel
+        # https://github.com/pypa/cibuildwheel
+        # Hit this: https://github.com/pypa/cibuildwheel/discussions/1926
+        env:
+          # https://github.com/leanprover/lean4/pull/6631/files
+          MACOSX_DEPLOYMENT_TARGET: 99.0
+          CIBW_BUILD_VERBOSITY: 1
+          CIBW_SKIP: 'pp* *-win32 *-manylinux_i686 *-musllinux_*' # The build doesn't work 686 or musl
+        run: |
+          pip install cibuildwheel
+          bin/make-wheel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./.wheel/wheelhouse/*.whl
+
   # Mostly followed guides here:
   # - https://github.com/pypa/gh-action-pypi-publish?tab=readme-ov-file
   # - https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
