@@ -36,6 +36,9 @@ jobs:
       - name: Run Lean tests
         run: lake exe klr
 
+      - name: List library dependencies
+        run: ./bin/check-libs ./.lake/build/bin/klr
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:

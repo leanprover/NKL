@@ -1,0 +1,24 @@
+#!/bin/bash
+set -e -u -o pipefail
+trap "kill 0" SIGINT SIGTERM
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: check-libs file"
+  exit 1
+fi
+
+file=$1; shift
+os=$(uname)
+
+echo "Listing library dependencies of ${file}..."
+
+echo "Architecture: $(uname -m)"
+
+if [[ $os == "Darwin" ]]; then
+  otool -L $file
+elif [[ $os == "Linux" ]]; then
+  ldd $file
+else
+  echo "Unsupported OS"
+  exit 1
+fi
