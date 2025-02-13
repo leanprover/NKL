@@ -183,12 +183,16 @@ An example of a global is:
     else:
       ...
 -/
+instance : Repr Lean.Json where
+  reprPrec jsn _ := jsn.compress
+
 structure Kernel where
   entry : String
   funcs : List (String × Fun)
   args : List Expr'
   kwargs : List (String × Expr')
   globals : List (String × Expr')
+  undefinedSymbols : List Lean.Json
   deriving Repr
 
 /-
@@ -229,6 +233,8 @@ abbrev Parser := StM Pos
 
 private def str : Json -> Parser String :=
   monadLift ∘ Json.getStr?
+
+private def json (jsn : Json) : Parser Json := return jsn
 
 private def field (f: Json -> Parser a) (j : Json) (name : String) : Parser a :=
   j.getObjVal? name >>= f
@@ -461,10 +467,12 @@ def kernel (j : Json) : Parser Kernel := do
   let args <- field (list global) j "args"
   let kwargs <- field (dict global) j "kwargs"
   let globals <- field (dict global) j "globals"
-  return Kernel.mk name funcs args kwargs globals
+  let undefinedSymbols <- field (list json) j "undefined_symbols"
+  return Kernel.mk name funcs args kwargs globals undefinedSymbols
 
 def parse (s : String) : Err Kernel := do
   let jsn <- Json.parse s
   match kernel jsn {} with
-  | .ok x _ => .ok x
+  | .ok x _ =>
+    if !x.undefinedSymbols.isEmpty then .error "undefined symbols" else .ok x
   | .error s _ => .error s

@@ -14,6 +14,8 @@ import types
 from collections import deque
 from textwrap import dedent
 from importlib.resources import files
+from typing import List
+
 
 def up(f, n):
   d = os.path.dirname(f)
@@ -101,6 +103,7 @@ class Parser(ast.NodeVisitor):
     self.args = []
     self.kwargs = {}
     self.entry = f.__module__ + "." + f.__name__
+    self.undefined_symbols = [] # Lean can send these back to the caller as linter errors
     self.ref_global(self.entry, f)
     self.do_work()
 
@@ -110,6 +113,7 @@ class Parser(ast.NodeVisitor):
         , 'args' : self.args
         , 'kwargs' : self.kwargs
         , 'globals': self.globals
+        , 'undefined_symbols': self.undefined_symbols
         }
     return json.dumps(d, cls=Enc)
 
@@ -202,7 +206,7 @@ class Parser(ast.NodeVisitor):
         continue
       self.funcs[fullname] = self.translate(src, line, f, args, body)
 
-  def translate(self, src: str, line: int, f: types.FunctionType, args: ast.arguments, body: [ast.AST]):
+  def translate(self, src: str, line: int, f: types.FunctionType, args: ast.arguments, body: List[ast.AST]):
     self.f = f
     for s in body:
       self.visit(s)
@@ -221,14 +225,20 @@ class Parser(ast.NodeVisitor):
   # if we find other uses of potentially global names
   # and fail to understand them; as long as we find and record
   # the "real" uses into the environment for the Lean code.
-  def lookup(self, s):
-    return self.f.__globals__.get(s) or self.f.__builtins__.get(s)
+  def lookup(self, node):
+    s = node.id
+    if s in self.f.__globals__:
+      return self.f.__globals__[s]
+    if s in self.f.__builtins__:
+      return self.f.__builtins__[s]
+    self.undefined_symbols.append(node)
+    return None
 
   def visit_Name(self, node):
     if node.id not in self.f.__code__.co_names:
       return
     try:
-      y = self.lookup(node.id)
+      y = self.lookup(node)
       self.ref_global(node.id, y)
       return node.id, y
     except Unsupported as e:
@@ -250,3 +260,13 @@ class Parser(ast.NodeVisitor):
       raise e
     except Exception:
       return
+
+
+if __name__ == '__main__':
+  y = None
+  z = 5
+
+  def unknown():
+    return (x, y, z)
+
+  print (Parser(unknown).json())
