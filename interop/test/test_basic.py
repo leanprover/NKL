@@ -125,7 +125,7 @@ def test_succeed(f):
 # (These functions are expected to fail elaboration to KLR)
 
 def name_not_found():
-  return x
+  x
 
 @pytest.mark.parametrize("f", [
   name_not_found,
