@@ -27,12 +27,7 @@ def ppMemory : Memory -> Format
   | .pmem => "pmem"
   | .reg => "reg"
 
-def ppTensor (t : TensorName) : Format :=
-  t.name ++ abracket (.joinSep [
-    format t.dtype,
-    .paren (.joinSep t.shape ","),
-    ppMemory t.memory
-    ] ",")
+def ppTensor (t : TensorName) : Format := t.name
 
 def ppConst : Const -> Format
   | .none       => "None"

@@ -25,10 +25,10 @@ def Expr.inferTensor : Expr -> Err (TensorName × List Index)
       match <- inferTensor t with
       | (t, [.ellipsis]) => return (t, ix)
       | _ => throw "unsupported tensor expression"
-  | _ => throw "expecting tensor"
+  | _ => throw "expecting tensor expression"
 
 def Term.inferTensor : Term -> Err (TensorName × List Index)
-  | .expr e (.tensor _ _) => Expr.inferTensor e
+  | .expr e _ => Expr.inferTensor e
   | _ => throw "expecting tensor"
 
 -- This only handles the simple cases
@@ -87,7 +87,11 @@ def store_expr (tag : String)
   | .expr e (.tensor _ shape) => do
       let dst <- declare tag dtype shape memory
       return .store dst [.ellipsis] e
-  | _ => throw "expecting tensor"
+  | .expr e _ => do
+      let shape <- Expr.inferShape e
+      let dst <- declare tag dtype shape memory
+      return .store dst [.ellipsis] e
+  | _ => throw "expecting tensor in store"
 
 -- APIs
 
@@ -188,7 +192,7 @@ def store : GlobalFn :=
   fun
   | [.expr dst (.tensor _ s₁), .expr src (.tensor _ s₂)] => do
       if s₁ != s₂ then
-        throw "incompatible shapes {s₁} {s₂}"
+        throw s!"incompatible shapes {s₁} {s₂}"
       let (t₁, i₁) <- Expr.inferTensor dst
       let (t₂, i₂) <- Expr.inferTensor src
       let src := Expr.access (.tensor t₂) i₂
