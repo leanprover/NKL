@@ -148,8 +148,8 @@ def Term.format : Term -> Lean.Format
   | .list l => .text s!"list<{l.length}>"
   | .ellipsis => .text "ellipsis"
   | .slice a b c => .text s!"slice({a},{b},{c})"
-  | .store t ix e => Lean.format (Stmt.store t ix e)
-  | .expr e ty  => Lean.format e ++ ":" ++ repr ty
+  | .store t ix e => repr (Stmt.store t ix e)
+  | .expr e ty  => repr e ++ ":" ++ repr ty
 
 instance : Repr Term where reprPrec b _ := b.format
 
