@@ -9,9 +9,11 @@ on:
     - '**' # For now, let's build all branches. Roll this back if it gets too slow or we exhaust our quota.
     tags:
     - 'v[0-9]+.[0-9]+.[0-9]+' # Build v1.2.3 tags as well. We'll use tags as the criteria for publishing
-  pull_request:
-    branches:
-    - '**' # * does not match '/' like sm/my-feature
+  # As long as we're building on all branch pushes, we do not need to run on pull requests.
+  # If we stop that in the future, we'll want this back, so leaving in commented code.
+  # pull_request:
+  #   branches:
+  #   - '**' # * does not match '/' like sm/my-feature
   workflow_dispatch: # For manually triggering a build: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_dispatch
 
 jobs:
