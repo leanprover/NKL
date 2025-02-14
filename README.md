@@ -26,7 +26,9 @@ a simple file-IO pipeline;
 
 # Steps to make a new version/wheel
 
-1. Bump the build or minor version in interop/pyproject.toml
+1. Bump the build or minor version in
+- interop/pyproject.toml (Deployment to PyPI will fail if you forget this.)
+- Main.klrCmd (Nothing will break if you don't, but we'd like to be consistent)
 2. Create a git tag of the form v1.2.3 and push it to KLR repo
 
 This should trigger a build that uploads the artifacts to pypi.
