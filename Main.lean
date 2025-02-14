@@ -7,6 +7,26 @@ local instance : MonadLift Err IO where
     | .ok x => return x
     | .error s => throw $ .userError s
 
+def gather (p : Parsed) : IO UInt32 := do
+  let kernel := p.positionalArg! "kernel" |>.as! String
+  let path1 <- IO.appPath
+  let path2 := (<- IO.currentDir).join "bin"
+  for p in [path1, path2] do
+    let exe := (p.join "gather")
+    if <- exe.pathExists then
+      try do
+        let output <- IO.Process.run {
+          cmd := exe.toString
+          args := #[ kernel ]
+        }
+        IO.println output
+        return 0
+      catch _ =>
+        IO.println s!"gather failed: please make sure {kernel} is in your PYTHONPATH"
+        return 1
+  IO.println s!"could not find gather program"
+  return 2
+
 private def parse (p : Parsed) : IO KLR.Python.Kernel := do
   let file := p.positionalArg! "file" |>.as! String
   let s <- IO.FS.readFile file
@@ -53,6 +73,16 @@ def compile (p : Parsed) : IO UInt32 := do
     IO.println (toString $ Lean.toJson bir)
   return 0
 
+-- Command configuration
+
+def gatherCmd := `[Cli|
+  "gather" VIA gather;
+  "Gather Python sources into a JSON file"
+
+  ARGS:
+    kernel : String; "Full path of kernel function"
+]
+
 def parseJsonCmd := `[Cli|
   "parse-json" VIA parseJson;
   "Parse KLR kernels as JSON"
@@ -93,11 +123,12 @@ def compileCmd := `[Cli|
 ]
 
 def klrCmd : Cmd := `[Cli|
-  klr NOOP; ["0.0.1"]
+  klr NOOP; ["0.0.7"]
   "KLR is an IR for NKI and other tensor-like languages in Lean."
 
   SUBCOMMANDS:
     compileCmd;
+    gatherCmd;
     parseBIRCmd;
     parseJsonCmd;
     traceCmd
