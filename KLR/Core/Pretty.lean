@@ -63,16 +63,20 @@ def ppIndex : Index -> Format
   | .slice s u none => .joinSep ([s,u].map ppIndexExpr?) ":"
   | .slice l u s => .joinSep ([l,u,s].map ppIndexExpr?) ":"
 
+def ppOperator : Operator -> Format
+  | .tensorScalar _ => "tensor_scalar{..}"
+
 private def ppList (f : a -> Format) : List a -> Format
   | [] => .nil
   | x :: xs => .append (f x) (ppList f xs)
 
 partial def ppExpr : Expr -> Format
-  | .var x         => x
-  | .const c       => ppConst c
-  | .tensor t      => ppTensor t
-  | .access t ix   => .fill (ppExpr t ++ .sbracket (.joinSep (ix.map ppIndex) ","))
-  | .operator _ => "operator"
+  | .var x => x
+  | .const c => ppConst c
+  | .tensor t => ppTensor t
+  | .access t [.ellipsis] => ppExpr t
+  | .access t ix => .fill (ppExpr t ++ .sbracket (.joinSep (ix.map ppIndex) ","))
+  | .operator op => ppOperator op
   | .call f args kwargs =>
       let args := args.map ppExpr
       let kwargs := kwargs.map fun (x,e) => x ++ "=" ++ ppExpr e
@@ -107,6 +111,7 @@ instance : ToFormat TensorName where format := ppTensor
 instance : ToFormat Const      where format := ppConst
 instance : ToFormat IndexExpr  where format := ppIndexExpr 0
 instance : ToFormat Index      where format := ppIndex
+instance : ToFormat Operator   where format := ppOperator
 instance : ToFormat Expr       where format := ppExpr
 instance : ToFormat Stmt       where format := ppStmt
 instance : ToFormat Kernel     where format := ppKernel

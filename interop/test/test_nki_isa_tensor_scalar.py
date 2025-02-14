@@ -4,6 +4,7 @@ Copyright (C) 2025, Amazon.com. All Rights Reserved
 """
 import unittest
 
+import numpy as np
 import nki.isa as nisa
 import nki.language as nl
 
@@ -57,3 +58,9 @@ def kernel3(a):
 def kernel3b():
   a = nl.ndarray((128,512), dtype="float32", buffer=nl.shared_hbm)
   return kernel3(a)
+
+def kernel4(a, b):
+  for x in range(4):
+    a_tile = nl.load(a[x,0:10])
+    b_tile = nisa.tensor_scalar(a_tile, np.subtract, 1.0)
+    nl.store(b[x,0:10], b_tile)
