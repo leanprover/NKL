@@ -7,6 +7,7 @@ import Lean
 import KLR.Core
 import KLR.Python
 import KLR.Trace.Types
+import KLR.Trace.Builtin
 import KLR.Trace.Basic
 
 namespace KLR.Trace
@@ -450,6 +451,12 @@ def traceKernel (k : Kernel) : Tracer Core.Kernel := do
         outputs := outputs
         body := (<- get).body.toList
       }
+
+def PythonEnv :=
+  let const s := Builtin.const_var (.str .anonymous s)
+  [
+    const "range"
+  ]
 
 def runKernel (k : Kernel) : Err Core.Kernel :=
   tracer ⟨ ∅, #[] ⟩ (traceKernel k)

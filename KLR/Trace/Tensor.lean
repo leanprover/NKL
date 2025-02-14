@@ -190,11 +190,14 @@ def load : GlobalFn :=
 def store : GlobalFn :=
   withArgs [("dst", none),("value", none)]
   fun
-  | [.expr dst (.tensor _ s₁), .expr src (.tensor _ s₂)] => do
-      if s₁ != s₂ then
-        throw s!"incompatible shapes {s₁} {s₂}"
+  | [.expr dst _, .expr src _] => do
       let (t₁, i₁) <- Expr.inferTensor dst
       let (t₂, i₂) <- Expr.inferTensor src
+      let s₁ <- inferShape t₁ i₁
+      let s₂ <- inferShape t₂ i₂
+      if s₁ != s₂ then
+        throw s!"incompatible shapes {s₁} {s₂}"
+
       let src := Expr.access (.tensor t₂) i₂
       return Term.store t₁ i₁ src
   | _ => throw "invalid arguments"

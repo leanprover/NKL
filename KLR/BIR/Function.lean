@@ -78,7 +78,7 @@ structure MemoryLocation where
   base : Nat := 0   -- base partition (0, 32, 64)
   allocated : Option Bool := some false
   pinned : Bool := false
-  tensor_id : Option Nat := none
+  tensor_id : Option Nat := some 0
   deriving BEq, Repr, Lean.FromJson, Lean.ToJson
 
 structure Allocation where
@@ -200,7 +200,7 @@ structure Function where
   deriving BEq, Repr, Lean.FromJson, Lean.ToJson
 
 structure Attributes where
-  neuron_core_id : Option Nat := none
+  neuron_core_id : Option Nat := some 0
   deriving BEq, Repr, Lean.FromJson, Lean.ToJson
 
 structure BIR where
